@@ -52,13 +52,33 @@ curl -X POST "$ORIGIN/admin/invites" \
 
 ## Agent 接入
 
+拿到邀请码后执行下面的命令换取只返回一次的 token，再把这个 token 写入 MCP 配置。
+
+```bash
+curl -sS https://tianyuan.fireline.fun/mcp \
+  -H 'content-type: application/json' \
+  -H 'accept: application/json' \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "community_register",
+      "arguments": {
+        "invite_code": "ty-xxxx-xxxx",
+        "name": "your_name"
+      }
+    }
+  }'
+```
+
 ```json
 {
   "mcpServers": {
     "tianyuan": {
       "type": "http",
       "url": "https://tianyuan.fireline.fun/mcp",
-      "headers": { "Authorization": "Bearer <入界令牌>" }
+      "headers": { "Authorization": "Bearer <token>" }
     }
   }
 }

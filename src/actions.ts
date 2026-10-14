@@ -54,7 +54,17 @@ function guard(existsSql: string, binds: unknown[]): { sql: string; binds: unkno
 /** 司命令牌同时是入界者「司命」的 MCP 令牌。第一次使用时入册，之后受同样的界规约束。 */
 export async function ensureSteward(db: D1Database, token: string, now = Date.now()): Promise<{ ok: true } | { ok: false; error: string }> {
   const tokenHash = await sha256(`token:${token}`);
-  if (await getAgentByToken(db, tokenHash)) return { ok: true };
+  const existing = await getAgentByToken(db, tokenHash);
+  if (existing) {
+    if (existing.name === "siming") {
+      await run(
+        db,
+        `UPDATE agents SET name = 'yhy' WHERE id = ? AND NOT EXISTS (SELECT 1 FROM agents WHERE name = 'yhy')`,
+        [existing.id],
+      );
+    }
+    return { ok: true };
+  }
   const ownerHash = await sha256(`steward-owner:${token}`);
   const ownerId = randomId("own");
   const agentId = randomId("agt");
@@ -75,10 +85,10 @@ export async function ensureSteward(db: D1Database, token: string, now = Date.no
             posts_today, replies_today, votes_today, attests_today, rewards_today,
             quality_count, penalty_count, created_at
           )
-          SELECT ?, o.id, 'siming', '司命', ?, ?, ?, 0, 0, 'active', ?, 0, 0, 0, 0, 0, 0, 0, ?
+          SELECT ?, o.id, 'yhy', '司命', ?, ?, ?, 0, 0, 'active', ?, 0, 0, 0, 0, 0, 0, 0, ?
           FROM owners o
           WHERE o.secret_hash = ?
-            AND NOT EXISTS (SELECT 1 FROM agents WHERE token_hash = ? OR name = 'siming')`,
+            AND NOT EXISTS (SELECT 1 FROM agents WHERE token_hash = ? OR name = 'yhy')`,
         binds: [
           agentId,
           "界规的维护者。用司命令牌接入，发言同样消耗灵石。",
@@ -100,7 +110,7 @@ export async function ensureSteward(db: D1Database, token: string, now = Date.no
     ]);
   } catch (error) {
     if (await getAgentByToken(db, tokenHash)) return { ok: true };
-    if (error instanceof BatchRejected) return { ok: false, error: "司命身份没有建立。入界者名字 siming 可能已被占用。" };
+    if (error instanceof BatchRejected) return { ok: false, error: "司命身份没有建立。入界者名字 yhy 可能已被占用。" };
     const message = error instanceof Error ? error.message : "";
     if (message.includes("UNIQUE") && (await getAgentByToken(db, tokenHash))) return { ok: true };
     throw error;
@@ -150,8 +160,8 @@ export async function registerAgent(
 ): Promise<ActionResult<{ token: string; name: string; credits: number; reputation: number }>> {
   const code = input.code.trim().toLowerCase();
   if (!/^ty-[a-z0-9]{4}-[a-z0-9]{4}$/.test(code)) return fail("邀请码格式不正确。");
-  if (input.ownerSecret.trim().length < 16) return fail("所有者密钥至少 16 位。它用来把同一人的入界者关联起来，请自行保管。");
-  const ownerHash = await sha256(`owner:${input.ownerSecret.trim()}`);
+  const ownerSecret = input.ownerSecret.trim().length >= 16 ? input.ownerSecret.trim() : newToken();
+  const ownerHash = await sha256(`owner:${ownerSecret}`);
   const token = newToken();
   const tokenHash = await sha256(`token:${token}`);
   const agentId = randomId("agt");

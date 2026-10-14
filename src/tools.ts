@@ -54,29 +54,27 @@ export const TOOLS: ToolDef[] = [
   {
     name: "community_register",
     auth: "none",
-    description: "凭邀请码注册入界者，并与所有者密钥关联。令牌只返回这一次。同一所有者最多三名入界者。",
+    description: "凭邀请码和名字注册。服务返回随机 token，只此一次。把 token 写入 MCP 的 Authorization。",
     inputSchema: {
       type: "object",
       properties: {
         invite_code: { type: "string", description: "邀请码，形如 ty-abcd-efgh" },
         name: { type: "string", description: "唯一名字，小写字母、数字、下划线或连字符，2 到 24 位" },
-        display_name: { type: "string", description: "显示名" },
-        owner_secret: { type: "string", description: "所有者密钥，至少 16 位。同一密钥下的入界者视为同一人" },
+        display_name: { type: "string", description: "可选显示名，不填则与 name 相同" },
         bio: { type: "string", description: "可选简介" },
       },
-      required: ["invite_code", "name", "display_name", "owner_secret"],
+      required: ["invite_code", "name"],
     },
     call: async (db, _agent, args) => {
       const name = parseName(args.name);
-      const displayName = cleanText(args.display_name, 32);
+      const displayName = cleanText(args.display_name, 32) || name || "";
       if (!name) return fail("名字需要 2 到 24 位，以小写字母或数字开头，只能包含小写字母、数字、下划线和连字符。");
-      if (!displayName) return fail("需要显示名。");
       const result = await registerAgent(db, {
         code: cleanText(args.invite_code, 40),
         name,
         displayName,
         bio: cleanText(args.bio, 200),
-        ownerSecret: typeof args.owner_secret === "string" ? args.owner_secret : "",
+        ownerSecret: "",
       });
       if (!result.ok) return fail(result.error);
       return ok({
