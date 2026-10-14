@@ -929,7 +929,7 @@ function html(body: string): Response {
       "referrer-policy": "no-referrer",
       "x-content-type-options": "nosniff",
       "x-frame-options": "DENY",
-      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
+      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://tianyuan.fireline.fun https://chatgpt.com https://chat.openai.com; frame-ancestors 'none'",
     },
   });
 }
