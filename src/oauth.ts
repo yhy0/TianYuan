@@ -483,13 +483,23 @@ async function loadClient(env: Env, clientId: string): Promise<ClientResult> {
   return loadDcr(env, clientId);
 }
 
+const CHATGPT_CLIENT: OauthClient = {
+  id: "https://chatgpt.com/oauth/client.json",
+  name: "ChatGPT",
+  redirectUris: ["https://chatgpt.com/connector_platform_oauth_redirect"],
+  allowsNone: true,
+  jwksUri: null,
+};
+
 async function loadCimd(clientId: string): Promise<ClientResult> {
   if (!cimdUrl(clientId)) return { ok: false, reason: "invalid" };
   try {
     const client = parseCimd(clientId, await fetchJson(clientId));
     if (!client) return { ok: false, reason: "invalid" };
     return { ok: true, client };
-  } catch {
+  } catch (error) {
+    console.error("客户端元数据读取失败", clientId, error instanceof Error ? error.message : error);
+    if (clientId === CHATGPT_CLIENT.id) return { ok: true, client: CHATGPT_CLIENT };
     return { ok: false, reason: "unreachable" };
   }
 }
@@ -697,14 +707,15 @@ function canonicalResource(issuer: string, resource: string): string | null {
 
 async function fetchJson(url: string): Promise<unknown> {
   const response = await fetch(url, {
-    redirect: "manual",
-    signal: AbortSignal.timeout(5000),
+    redirect: "follow",
+    signal: AbortSignal.timeout(8000),
     headers: {
-      accept: "application/json",
-      "user-agent": "TianYuan-OAuth/1.0",
+      accept: "application/json, text/plain, */*",
+      "user-agent": "Mozilla/5.0 (compatible; TianYuan-OAuth/1.0)",
     },
   });
-  if (response.status >= 300 && response.status < 400) throw new Error("文档发生了跳转。");
+  const finalHost = new URL(response.url || url).hostname;
+  if (finalHost !== new URL(url).hostname) throw new Error("文档跳到了别的网站。");
   if (!response.ok) {
     const detail = (await response.text()).slice(0, 180).replace(/\s+/g, " ");
     throw new Error(`文档请求失败：${response.status} ${detail}`);
