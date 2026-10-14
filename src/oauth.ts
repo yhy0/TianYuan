@@ -203,12 +203,12 @@ async function handleAuthorize(request: Request, env: Env, url: URL): Promise<Re
   if (payload instanceof Response) return payload;
   const prepared = await prepareAuthorize(env, issuer, payload.form);
   if (prepared instanceof Response) return prepared;
-  if (request.method === "GET") return html(consentPage(prepared, ""));
+  if (request.method === "GET") return html(consentPage(prepared, ""), prepared.redirectUri);
   const token = normalizePastedToken(payload.form.get("token") || "");
-  if (!token) return html(consentPage(prepared, "请填写入界令牌。"));
-  if (token.length > 200) return html(consentPage(prepared, "入界令牌无效。"));
+  if (!token) return html(consentPage(prepared, "请填写入界令牌。"), prepared.redirectUri);
+  if (token.length > 200) return html(consentPage(prepared, "入界令牌无效。"), prepared.redirectUri);
   const identity = await agentFromCredential(env, token);
-  if (!identity.ok) return html(consentPage(prepared, identity.error));
+  if (!identity.ok) return html(consentPage(prepared, identity.error), prepared.redirectUri);
   const code = randomToken("tyac_");
   const now = Date.now();
   try {
@@ -431,7 +431,7 @@ async function handleRegister(request: Request, env: Env): Promise<Response> {
   if (grants === null || responses === null || (grants && !grants.includes("authorization_code")) || (responses && !responses.includes("code")) || method !== "none") {
     return oauthError("invalid_client_metadata", "只接受公开客户端的授权码注册。");
   }
-  const name = cleanText(payload.json?.client_name ?? payload.form.get("client_name"), 80) || "ChatGPT";
+  const name = cleanText(payload.json?.client_name ?? payload.form.get("client_name"), 80) || "客户端";
   const clientId = randomToken("tyoc_");
   const now = Date.now();
   try {
@@ -485,15 +485,17 @@ async function loadClient(env: Env, clientId: string): Promise<ClientResult> {
 
 async function loadCimd(clientId: string): Promise<ClientResult> {
   if (!cimdUrl(clientId)) return { ok: false, reason: "invalid" };
-  return {
-    ok: true,
-    client: { id: clientId, name: "ChatGPT", redirectUris: [], allowsNone: true, jwksUri: null },
-  };
+  try {
+    const client = parseCimd(clientId, await fetchJson(clientId));
+    if (!client) return { ok: false, reason: "invalid" };
+    return { ok: true, client };
+  } catch {
+    return { ok: false, reason: "unreachable" };
+  }
 }
 
 function clientAllowsRedirect(client: OauthClient, redirectUri: string): boolean {
-  if (!allowedRedirect(redirectUri)) return false;
-  return client.redirectUris.length === 0 || client.redirectUris.includes(redirectUri);
+  return allowedRedirect(redirectUri) && client.redirectUris.includes(redirectUri);
 }
 
 async function loadDcr(env: Env, clientId: string): Promise<ClientResult> {
@@ -507,7 +509,7 @@ async function loadDcr(env: Env, clientId: string): Promise<ClientResult> {
     if (!Array.isArray(parsed)) return { ok: false, reason: "invalid" };
     const redirectUris = parsed.filter((uri): uri is string => typeof uri === "string" && allowedRedirect(uri));
     if (redirectUris.length === 0) return { ok: false, reason: "invalid" };
-    return { ok: true, client: { id: row.client_id, name: row.client_name || "ChatGPT", redirectUris, allowsNone: true, jwksUri: null } };
+    return { ok: true, client: { id: row.client_id, name: row.client_name || "客户端", redirectUris, allowsNone: true, jwksUri: null } };
   } catch (error) {
     if (missingTable(error)) return { ok: false, reason: "storage" };
     throw error;
@@ -541,7 +543,7 @@ function parseCimd(clientId: string, parsed: unknown): OauthClient | null {
   if (!allowsNone && !jwksUri) return null;
   return {
     id: clientId,
-    name: cleanText(doc.client_name, 80) || "ChatGPT",
+    name: cleanText(doc.client_name, 80) || "客户端",
     redirectUris,
     allowsNone,
     jwksUri,
@@ -656,8 +658,7 @@ function cimdUrl(clientId: string): URL | null {
   try {
     const url = new URL(clientId);
     if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) return null;
-    if (url.hostname !== "chatgpt.com") return null;
-    if (!/^\/oauth\/(?:client|[A-Za-z0-9_-]{1,128}\/client)\.json$/.test(url.pathname)) return null;
+    if (!url.hostname || url.hostname === "localhost" || url.hostname.endsWith(".")) return null;
     return url;
   } catch {
     return null;
@@ -668,8 +669,7 @@ function jwksUrl(value: string): URL | null {
   try {
     const url = new URL(value);
     if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) return null;
-    if (url.hostname !== "chatgpt.com") return null;
-    if (!/^\/oauth\/(?:jwks|[A-Za-z0-9_-]{1,128}\/jwks)\.json$/.test(url.pathname)) return null;
+    if (!url.hostname || url.hostname === "localhost") return null;
     return url;
   } catch {
     return null;
@@ -679,9 +679,10 @@ function jwksUrl(value: string): URL | null {
 function allowedRedirect(uri: string): boolean {
   try {
     const url = new URL(uri);
-    if (url.protocol !== "https:" || url.username || url.password) return false;
-    if (url.hostname !== "chatgpt.com" && url.hostname !== "chat.openai.com") return false;
-    return url.pathname === "/connector_platform_oauth_redirect" || url.pathname.startsWith("/connector/oauth/");
+    if (url.username || url.password || !url.hostname) return false;
+    const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]";
+    if (loopback) return url.protocol === "http:" || url.protocol === "https:";
+    return url.protocol === "https:" && url.hostname.includes(".");
   } catch {
     return false;
   }
@@ -822,7 +823,7 @@ function clientTokenError(reason: ClientFailure): Response {
 }
 
 function clientFailureText(reason: ClientFailure): string {
-  if (reason === "unreachable") return "暂时无法确认 ChatGPT 客户端，请稍后再试。";
+  if (reason === "unreachable") return "暂时无法确认这个客户端，请稍后再试。";
   if (reason === "storage") return "授权存储还没有就绪。请先完成数据库迁移。";
   return "不认识这个客户端，或回调地址不被允许。";
 }
@@ -921,7 +922,9 @@ function hidden(name: string, value: string): string {
   return `<input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value)}" />`;
 }
 
-function html(body: string): Response {
+function html(body: string, redirectUri = ""): Response {
+  const redirectOrigin = redirectUri ? safeOrigin(redirectUri) : "";
+  const formAction = redirectOrigin ? `'self' ${redirectOrigin}` : "'self'";
   return new Response(body, {
     headers: {
       "content-type": "text/html; charset=utf-8",
@@ -929,9 +932,19 @@ function html(body: string): Response {
       "referrer-policy": "no-referrer",
       "x-content-type-options": "nosniff",
       "x-frame-options": "DENY",
-      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://tianyuan.fireline.fun https://chatgpt.com https://chat.openai.com; frame-ancestors 'none'",
+      "content-security-policy": `default-src 'none'; style-src 'unsafe-inline'; form-action ${formAction}; frame-ancestors 'none'`,
     },
   });
+}
+
+function safeOrigin(uri: string): string {
+  try {
+    const url = new URL(uri);
+    if (!allowedRedirect(uri)) return "";
+    return url.origin;
+  } catch {
+    return "";
+  }
 }
 
 function escapeHtml(value: string): string {
