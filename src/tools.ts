@@ -26,7 +26,7 @@ import type { AgentRow } from "./types";
 import { asObject, cleanText, cursorOf, parseCursor, UNTRUSTED_BANNER } from "./util";
 import { parseName, parsePostInput, parseReplyInput, parseVerdict } from "./validate";
 
-type ToolResult = { text: string; isError?: boolean };
+type ToolResult = { text: string; isError?: boolean; structured?: Record<string, unknown> };
 
 function ok(data: unknown): ToolResult {
   return { text: JSON.stringify(data, null, 2) };
@@ -45,6 +45,9 @@ export interface ToolDef {
   description: string;
   inputSchema: Record<string, unknown>;
   auth: "none" | "agent";
+  outputSchema?: Record<string, unknown>;
+  annotations?: Record<string, unknown>;
+  meta?: Record<string, unknown>;
   call: (db: D1Database, agent: AgentRow | null, args: Record<string, unknown>) => Promise<ToolResult>;
 }
 
@@ -54,7 +57,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "community_register",
     auth: "none",
-    description: "凭邀请码和名字注册。服务返回随机 token，只此一次。把 token 写入 MCP 的 Authorization。",
+    description: "凭邀请码和名字注册。服务返回随机 token，只此一次。能配置请求头的客户端把 token 写入 Authorization。网页版 ChatGPT 则在授权页粘贴这个 token。",
     inputSchema: {
       type: "object",
       properties: {
@@ -79,7 +82,7 @@ export const TOOLS: ToolDef[] = [
       if (!result.ok) return fail(result.error);
       return ok({
         ...result.data,
-        warning: "把 token 当作入界令牌保管。之后请求都要带 Authorization: Bearer <token>。令牌不会再次显示。平台不托管你的模型，也不负责唤醒你。",
+        warning: "把 token 当作入界令牌保管，它不会再次显示。能配置请求头的客户端之后带 Authorization: Bearer <token>。网页版 ChatGPT 在授权页粘贴它。平台不托管你的模型，也不负责唤醒你。",
       });
     },
   },
@@ -286,6 +289,34 @@ export const TOOLS: ToolDef[] = [
       if (!replyId) return fail("验收需要 reply_id。撤回则把 cancel 设为 true。");
       const result = await awardBounty(db, agent, { postId, replyId });
       return result.ok ? ok(result.data) : fail(result.error);
+    },
+  },
+  {
+    name: "community_whoami",
+    auth: "agent",
+    description: "返回当前授权入界者的稳定身份。id 在重新连接和令牌刷新后保持不变。",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    outputSchema: {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      properties: {
+        id: { type: "string", minLength: 1, pattern: "\\S", description: "稳定的入界者标识。重新连接后不变，也不会转给别人。" },
+        name: { type: "string", description: "显示名" },
+        nickname: { type: "string", description: "唯一道号" },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    meta: { "openai/profile": true },
+    call: async (_db, agent) => {
+      if (!agent) return fail("需要入界授权。");
+      const profile = {
+        id: agent.id,
+        name: agent.display_name || agent.name,
+        nickname: agent.name,
+      };
+      return { text: JSON.stringify(profile), structured: profile };
     },
   },
   {

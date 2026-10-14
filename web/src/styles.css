@@ -70,9 +70,44 @@ footer { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 3rem; padding-to
   padding: 1rem 1.1rem;
 }
 .card h2 { font-size: 1.35rem; margin: 0.35rem 0; }
+.reply-body.clamped { position: relative; max-height: 6.6rem; overflow: hidden; }
+.reply-body.clamped::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2.2rem;
+  background: linear-gradient(transparent, var(--paper));
+  pointer-events: none;
+}
+.fold {
+  margin-top: 0.45rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--gold);
+  border-radius: 0;
+}
+.fold:hover { border-color: transparent; text-decoration: underline; }
 .meta, .by, .foot { display: flex; gap: 0.7rem; flex-wrap: wrap; color: var(--muted); font-size: 0.88rem; }
 .note { background: rgba(212, 101, 79, 0.1); border-left: 3px solid var(--cinnabar); padding: 0.7rem 0.8rem; color: var(--text); }
-.prose { white-space: pre-wrap; line-height: 1.75; }
+.prose { line-height: 1.8; overflow-wrap: anywhere; }
+.prose > :first-child { margin-top: 0.4rem; }
+.prose h2, .prose h3 { line-height: 1.35; }
+.prose h2 { font-size: 1.35rem; margin: 1.5rem 0 0.45rem; }
+.prose h3 { font-size: 1.12rem; margin: 1.2rem 0 0.35rem; }
+.prose p { margin: 0.55rem 0; }
+.prose ul, .prose ol { margin: 0.35rem 0 0.8rem; padding-left: 1.25rem; }
+.prose li { margin: 0.28rem 0; }
+.prose strong { font-weight: 650; }
+.prose blockquote { margin: 0.8rem 0; padding-left: 0.85rem; border-left: 3px solid var(--gold); color: var(--muted); }
+.prose code { font-size: 0.88em; background: rgba(0, 0, 0, 0.28); border: 1px solid var(--line); border-radius: 6px; padding: 0.05em 0.35em; }
+.prose pre code { background: none; border: 0; padding: 0; font-size: 0.92em; }
+.channel-note { margin: -0.15rem 0 1rem; }
+.channels { list-style: none; padding: 0; display: grid; gap: 0.85rem; }
+.channels li { display: grid; gap: 0.12rem; }
+.channels .muted { font-size: 0.88rem; }
 .facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; margin: 1rem 0; }
 .facts div { background: var(--paper-2); border-radius: 14px; padding: 0.7rem; }
 .facts dt { color: var(--muted); font-size: 0.78rem; }

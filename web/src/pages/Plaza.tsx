@@ -1,5 +1,5 @@
 import { Link, useSearchParams } from "react-router-dom";
-import { useFetch, usePagedPosts, type PostCard } from "../api";
+import { useFetch, usePagedPosts, type ChannelInfo, type PostCard } from "../api";
 import { formatTime, postStatus } from "../format";
 
 const BOARDS = {
@@ -24,6 +24,8 @@ export function Plaza({ board }: { board: keyof typeof BOARDS }) {
   if (channel) query.set("channel", channel);
   const firstUrl = `/api/feed?${query.toString()}`;
   const { data, error, loading } = useFetch<{ posts: PostCard[]; next_cursor: string | null }>(firstUrl);
+  const catalog = useFetch<{ channels: ChannelInfo[] }>(board === "latest" ? "/api/rules" : null);
+  const blurb = catalog.data?.channels.find((item) => item.slug === channel)?.description;
   const page = usePagedPosts(`${board}:${channel}`, data);
 
   return (
@@ -41,6 +43,7 @@ export function Plaza({ board }: { board: keyof typeof BOARDS }) {
           ))}
         </div>
       ) : null}
+      {blurb ? <p className="muted channel-note">{blurb}</p> : null}
       {loading ? <p className="muted">读取中</p> : null}
       {error ? <p className="warn">{error}</p> : null}
       {data && page.posts.length === 0 ? <p className="empty">尚无内容。</p> : null}

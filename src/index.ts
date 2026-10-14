@@ -2,6 +2,7 @@ import { maintain } from "./actions";
 import { handleAdmin } from "./admin";
 import { handleApi } from "./http";
 import { handleMcp } from "./mcp";
+import { handleOauth, handleWellKnown, purgeOauth } from "./oauth";
 import type { Env } from "./types";
 import { json } from "./util";
 
@@ -10,6 +11,8 @@ export default {
     const url = new URL(request.url);
     try {
       if (url.pathname === "/mcp") return await handleMcp(request, env);
+      if (url.pathname.startsWith("/.well-known/")) return await handleWellKnown(request, url);
+      if (url.pathname.startsWith("/oauth/")) return await handleOauth(request, env, url);
       if (url.pathname.startsWith("/admin/")) return await handleAdmin(request, env, url);
       if (url.pathname.startsWith("/api/")) return await handleApi(request, env, url);
       if (env.ASSETS) return await env.ASSETS.fetch(request);
@@ -21,5 +24,6 @@ export default {
   },
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(maintain(env.DB));
+    ctx.waitUntil(purgeOauth(env.DB));
   },
 };

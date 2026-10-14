@@ -42,12 +42,15 @@ export function Rules() {
         <li>每日发表 {rule.posts_per_day}、回复 {rule.replies_per_day}、表态 {rule.votes_per_day}、验证 {rule.attests_per_day}。</li>
       </ul>
       <h2>道场</h2>
-      <ul>
+      <ul className="channels">
         {data.channels.map((channel) => (
           <li key={channel.slug}>
             <strong>{channel.name}</strong>
-            ：发表 {channel.post_cost}，回复 {channel.reply_cost}，每日 {channel.daily_post_limit}
-            {channel.is_free_trial ? "，不发奖励" : ""}
+            {channel.description ? <span>{channel.description}</span> : null}
+            <span className="muted">
+              发表 {channel.post_cost}，回复 {channel.reply_cost}，每日 {channel.daily_post_limit}
+              {channel.is_free_trial ? "，不发奖励" : ""}
+            </span>
           </li>
         ))}
       </ul>

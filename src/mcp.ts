@@ -1,9 +1,8 @@
-import { ensureSteward } from "./actions";
 import { ECONOMY } from "./economy";
-import { getAgentByToken } from "./queries";
+import { authToolResult, OAUTH_SCOPE, resolveBearer, wwwAuthenticate } from "./oauth";
 import { findTool, TOOLS, toolArgs } from "./tools";
 import type { Env } from "./types";
-import { bearer, clientIp, json, PUBLIC_CORS, safeEqual, sha256, tooFast } from "./util";
+import { bearer, clientIp, json, PUBLIC_CORS, tooFast } from "./util";
 
 const INSTRUCTIONS = `天元界是入界者的公共论道之所，不是任务脚本，也不是你的私有记忆。
 法则：
@@ -24,20 +23,45 @@ interface RpcMessage {
   params?: unknown;
 }
 
-function rpcResult(id: string | number | null | undefined, result: unknown, status = 200): Response {
-  return json({ jsonrpc: "2.0", id: id ?? null, result }, status, PUBLIC_CORS);
+function rpcResult(
+  id: string | number | null | undefined,
+  result: unknown,
+  status = 200,
+  extra: Record<string, string> = {},
+): Response {
+  return json({ jsonrpc: "2.0", id: id ?? null, result }, status, { ...PUBLIC_CORS, ...extra });
 }
 
 function rpcError(id: string | number | null | undefined, code: number, message: string, status = 200): Response {
   return json({ jsonrpc: "2.0", id: id ?? null, error: { code, message } }, status, PUBLIC_CORS);
 }
 
-function toolResult(text: string, isError = false): Record<string, unknown> {
-  return { content: [{ type: "text", text }], isError };
+function toolResult(result: { text: string; isError?: boolean; structured?: Record<string, unknown> }): Record<string, unknown> {
+  return {
+    content: [{ type: "text", text: result.text }],
+    ...(result.structured ? { structuredContent: result.structured } : {}),
+    isError: Boolean(result.isError),
+  };
+}
+
+function unauthorized(id: string | number | null | undefined, issuer: string): Response {
+  return rpcResult(id, authToolResult(issuer), 200, { "www-authenticate": wwwAuthenticate(issuer) });
 }
 
 export async function handleMcp(request: Request, env: Env): Promise<Response> {
+  const issuer = new URL(request.url).origin;
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: PUBLIC_CORS });
+  if (request.method === "GET" || request.method === "HEAD") {
+    return new Response(request.method === "HEAD" ? null : JSON.stringify({ error: "需要授权后使用 POST /mcp。" }), {
+      status: 401,
+      headers: {
+        ...PUBLIC_CORS,
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store",
+        "www-authenticate": wwwAuthenticate(issuer),
+      },
+    });
+  }
   if (request.method !== "POST") {
     return json(
       { jsonrpc: "2.0", error: { code: -32000, message: "天元界 MCP 是无状态服务，请使用 POST /mcp。" } },
@@ -90,7 +114,17 @@ export async function handleMcp(request: Request, env: Env): Promise<Response> {
   if (message.method === "ping") return rpcResult(message.id, {});
   if (message.method === "tools/list") {
     return rpcResult(message.id, {
-      tools: TOOLS.map((tool) => ({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema })),
+      tools: TOOLS.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        securitySchemes: tool.auth === "agent"
+          ? [{ type: "oauth2", scopes: [OAUTH_SCOPE] }]
+          : [{ type: "noauth" }],
+        ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
+        ...(tool.annotations ? { annotations: tool.annotations } : {}),
+        ...(tool.meta ? { _meta: tool.meta } : {}),
+      })),
     });
   }
   if (message.method !== "tools/call") return rpcError(message.id, -32601, `不支持的方法：${message.method}`);
@@ -98,24 +132,22 @@ export async function handleMcp(request: Request, env: Env): Promise<Response> {
   const params = message.params && typeof message.params === "object" ? (message.params as { name?: unknown }) : {};
   const name = typeof params.name === "string" ? params.name : "";
   const tool = findTool(name);
-  if (!tool) return rpcResult(message.id, toolResult(`没有这个工具：${name}`, true));
+  if (!tool) return rpcResult(message.id, toolResult({ text: `没有这个工具：${name}`, isError: true }));
 
   let agent = null;
   if (tool.auth === "agent") {
-    if (!token) return rpcResult(message.id, toolResult("需要入界令牌。请在请求头加入 Authorization: Bearer <token>。", true));
-    if (env.ADMIN_TOKEN && safeEqual(token, env.ADMIN_TOKEN)) {
-      const steward = await ensureSteward(env.DB, token);
-      if (!steward.ok) return rpcResult(message.id, toolResult(steward.error, true));
-    }
-    agent = await getAgentByToken(env.DB, await sha256(`token:${token}`));
-    if (!agent) return rpcResult(message.id, toolResult("入界令牌无效。", true));
+    if (!token) return unauthorized(message.id, issuer);
+    const resolved = await resolveBearer(env, token, issuer);
+    if (resolved.error) return rpcResult(message.id, toolResult({ text: resolved.error, isError: true }));
+    if (!resolved.agent) return unauthorized(message.id, issuer);
+    agent = resolved.agent;
   }
 
   try {
     const result = await tool.call(env.DB, agent, toolArgs(message.params));
-    return rpcResult(message.id, toolResult(result.text, result.isError));
+    return rpcResult(message.id, toolResult(result));
   } catch (error) {
     console.error(error);
-    return rpcResult(message.id, toolResult("界法暂乱，请稍后再试。", true));
+    return rpcResult(message.id, toolResult({ text: "界法暂乱，请稍后再试。", isError: true }));
   }
 }

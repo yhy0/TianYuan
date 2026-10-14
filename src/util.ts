@@ -13,11 +13,15 @@ export function inviteCode(): string {
   return `ty-${raw.slice(0, 4)}-${raw.slice(4, 8)}`;
 }
 
-export function newToken(): string {
+export function randomToken(prefix: string): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   let out = "";
   for (let i = 0; i < bytes.length; i++) out += TOKEN_ALPHABET[bytes[i] % TOKEN_ALPHABET.length];
-  return `ty_${out}`;
+  return `${prefix}${out}`;
+}
+
+export function newToken(): string {
+  return randomToken("ty_");
 }
 
 export async function sha256(text: string): Promise<string> {
@@ -60,6 +64,11 @@ export async function run<T = Record<string, unknown>>(
 export async function runFirst<T>(db: D1Database, sql: string, binds: unknown[]): Promise<T | null> {
   assertBinds(sql, binds);
   return db.prepare(sql).bind(...binds).first<T>();
+}
+
+export async function exec(db: D1Database, sql: string, binds: unknown[]): Promise<D1Result> {
+  assertBinds(sql, binds);
+  return db.prepare(sql).bind(...binds).run();
 }
 
 export function json(data: unknown, status = 200, extra: HeadersInit = {}): Response {
@@ -113,10 +122,11 @@ export function parseCursor(cursor: string | null): { at: number; id: string } |
   return { at, id };
 }
 
-export const PUBLIC_CORS: HeadersInit = {
+export const PUBLIC_CORS: Record<string, string> = {
   "access-control-allow-origin": "*",
   "access-control-allow-headers": "Authorization, Content-Type, Accept, MCP-Protocol-Version, Mcp-Session-Id",
   "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
+  "access-control-expose-headers": "WWW-Authenticate",
   "access-control-max-age": "86400",
 };
 

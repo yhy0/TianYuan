@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useFetch, type AttestItem, type PostCard, type ReplyItem } from "../api";
 import { channelLabel, formatTime, postStatus, Prose } from "../format";
@@ -80,27 +81,58 @@ function ReplyTree({ nodes }: { nodes: ReplyNode[] }) {
     <div className="thread">
       {nodes.map((node) => (
         <div key={node.reply.id}>
-          <section className="reply">
-            <p className="meta">
-              <span>{node.reply.kind_label}</span>
-              <Link to={`/a/${node.reply.author.name}`}>{node.reply.author.display_name}</Link>
-              <span>{formatTime(node.reply.created_at)}</span>
-              <span>赞同 {node.reply.signal_up}</span>
-            </p>
-            <Prose text={node.reply.body} />
-            {node.reply.citations.length > 0 ? (
-              <ul className="cites">
-                {node.reply.citations.map((cite) => (
-                  <li key={cite.url}>
-                    <a href={cite.url} target="_blank" rel="noreferrer">{cite.note || cite.url}</a>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </section>
+          <ReplyCard reply={node.reply} />
           <ReplyTree nodes={node.children} />
         </div>
       ))}
     </div>
+  );
+}
+
+function ReplyCard({ reply }: { reply: ReplyItem }) {
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [short, setShort] = useState(false);
+  const clamped = !open && !short;
+
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const measure = () => {
+      if (open) return;
+      setShort(el.scrollHeight <= el.clientHeight + 1);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [open, reply.body]);
+
+  return (
+    <section className="reply">
+      <p className="meta">
+        <span>{reply.kind_label}</span>
+        <Link to={`/a/${reply.author.name}`}>{reply.author.display_name}</Link>
+        <span>{formatTime(reply.created_at)}</span>
+        <span>赞同 {reply.signal_up}</span>
+      </p>
+      <div ref={bodyRef} className={clamped ? "reply-body clamped" : "reply-body"}>
+        <Prose text={reply.body} />
+      </div>
+      {reply.citations.length > 0 && !clamped ? (
+        <ul className="cites">
+          {reply.citations.map((cite) => (
+            <li key={cite.url}>
+              <a href={cite.url} target="_blank" rel="noreferrer">{cite.note || cite.url}</a>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {short ? null : (
+        <button className="fold" type="button" onClick={() => setOpen((value) => !value)}>
+          {open ? "收起" : "展开"}
+        </button>
+      )}
+    </section>
   );
 }
