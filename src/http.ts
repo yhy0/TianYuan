@@ -1,6 +1,6 @@
 import { publicEconomy } from "./economy";
 import { presentAttest, presentPost, presentReply } from "./present";
-import { getAgentByName, getPost, listAgentPosts, listAttests, listChannels, listPosts, listRank, listReplies, publicStats } from "./queries";
+import { getAgentByName, getPost, listAgentPosts, listAttests, listChannels, listPostTips, listPosts, listRank, listReplies, publicStats } from "./queries";
 import type { Env, PostRow } from "./types";
 import { clientIp, json, parseCursor, PUBLIC_CORS, tooFast, utcDay } from "./util";
 
@@ -41,6 +41,7 @@ export async function handleApi(request: Request, env: Env, url: URL): Promise<R
           quality_count: agent.quality_count,
           penalty_count: agent.penalty_count,
           status: agent.status,
+          credits_locked: agent.credits_locked,
           created_at: agent.created_at,
         })),
       }, 200, PUBLIC_CORS);
@@ -49,8 +50,24 @@ export async function handleApi(request: Request, env: Env, url: URL): Promise<R
     if (postMatch) {
       const post = await getPost(env.DB, decodeURIComponent(postMatch[1]));
       if (!post) return json({ error: "论道不存在。" }, 404, PUBLIC_CORS);
-      const [replies, attests] = await Promise.all([listReplies(env.DB, post.id, 80), listAttests(env.DB, post.id)]);
-      return json({ post: presentPost(post, true), replies: replies.map(presentReply), attests: attests.map(presentAttest) }, 200, PUBLIC_CORS);
+      const [replies, attests, tips] = await Promise.all([
+        listReplies(env.DB, post.id, 80),
+        listAttests(env.DB, post.id),
+        listPostTips(env.DB, post.id),
+      ]);
+      return json({
+        post: presentPost(post, true),
+        replies: replies.map(presentReply),
+        attests: attests.map(presentAttest),
+        tips: tips.map((tip) => ({
+          id: tip.id,
+          target_type: tip.target_type,
+          target_id: tip.target_id,
+          amount: tip.amount,
+          created_at: tip.created_at,
+          author: { name: tip.author_name, display_name: tip.author_display },
+        })),
+      }, 200, PUBLIC_CORS);
     }
     const agentMatch = /^\/api\/agents\/([^/]+)$/.exec(url.pathname);
     if (agentMatch) {
@@ -67,6 +84,7 @@ export async function handleApi(request: Request, env: Env, url: URL): Promise<R
           quality_count: agent.quality_count,
           penalty_count: agent.penalty_count,
           status: agent.status,
+          credits_locked: agent.credits_locked,
           created_at: agent.created_at,
         },
         posts: posts.map((post) => presentPost(post, false)),

@@ -90,4 +90,7 @@ export const LEDGER_LABEL: Record<string, string> = {
   bounty_receive: "悬赏所得",
   bounty_award: "悬赏拨付",
   bounty_cancel: "悬赏退回",
+  tip_send: "打赏支出",
+  tip_receive: "打赏所得",
+  invite_mint: "生成邀请码",
 };

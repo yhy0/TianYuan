@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 const CHANNELS: Record<string, string> = {
   lundao: "论道",
@@ -40,20 +40,35 @@ export function formatTime(ms: number): string {
   }).format(ms);
 }
 
+type HeadingLevel = 1 | 2 | 3 | 4;
+
+export interface ArticleHeading {
+  id: string;
+  level: 1 | 2 | 3;
+  text: string;
+}
+
 type Block =
-  | { type: "h"; level: 2 | 3; text: string }
+  | { type: "h"; level: HeadingLevel; text: string }
   | { type: "p"; text: string }
   | { type: "ul"; items: string[] }
   | { type: "ol"; start: number; items: string[] }
   | { type: "pre"; text: string }
   | { type: "quote"; text: string };
 
-export function Prose({ text }: { text: string }): ReactNode {
+export function articleOutline(source: string): ArticleHeading[] {
+  return parseBlocks(source).flatMap((block, index) => {
+    if (block.type !== "h" || block.level === 4) return [];
+    return [{ id: `h${index}`, level: block.level, text: plainHeading(block.text) }];
+  });
+}
+
+export function Prose({ text, anchored = false }: { text: string; anchored?: boolean }): ReactNode {
   const blocks = parseBlocks(text);
   if (blocks.length === 0) return null;
   return (
     <div className="prose">
-      {blocks.map((block, index) => renderBlock(block, index))}
+      {blocks.map((block, index) => renderBlock(block, index, anchored))}
     </div>
   );
 }
@@ -77,7 +92,8 @@ function parseBlocks(source: string): Block[] {
     }
     const heading = /^(#{1,6})\s+(.*)$/.exec(line);
     if (heading) {
-      blocks.push({ type: "h", level: heading[1].length <= 2 ? 2 : 3, text: heading[2].trim() });
+      const depth = Math.min(heading[1].length, 4) as HeadingLevel;
+      blocks.push({ type: "h", level: depth, text: heading[2].trim() });
       index += 1;
       continue;
     }
@@ -128,11 +144,12 @@ function blockStart(line: string): boolean {
   return /^(#{1,6})\s+/.test(line) || /^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line) || /^>\s?/.test(line) || line.trim().startsWith("```");
 }
 
-function renderBlock(block: Block, index: number): ReactNode {
+function renderBlock(block: Block, index: number, anchored: boolean): ReactNode {
   const key = `b${index}`;
   if (block.type === "h") {
-    const Tag = block.level === 2 ? "h2" : "h3";
-    return <Tag key={key}>{rich(block.text, key)}</Tag>;
+    const Tag = block.level === 1 ? "h2" : block.level === 2 ? "h3" : "h4";
+    const id = anchored && block.level <= 3 ? `h${index}` : undefined;
+    return <Tag key={key} id={id}>{rich(block.text, key)}</Tag>;
   }
   if (block.type === "ul") {
     return (
@@ -225,6 +242,14 @@ function inlineNodes(text: string, keyBase: string): ReactNode[] {
   return nodes;
 }
 
+function plainHeading(text: string): string {
+  return text
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .trim();
+}
+
 function safeHref(url: string): string | null {
   try {
     const parsed = new URL(url);
@@ -233,6 +258,38 @@ function safeHref(url: string): string | null {
   } catch {
     return null;
   }
+}
+
+export async function writeClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.left = "-9999px";
+    document.body.appendChild(area);
+    area.select();
+    const ok = document.execCommand("copy");
+    area.remove();
+    return ok;
+  }
+}
+
+export function CopyButton({ text }: { text: string }): ReactNode {
+  const [done, setDone] = useState(false);
+  async function copy() {
+    if (!(await writeClipboard(text))) return;
+    setDone(true);
+    window.setTimeout(() => setDone(false), 1400);
+  }
+  return (
+    <button className="copy" type="button" onClick={() => void copy()}>
+      {done ? "已复制" : "复制"}
+    </button>
+  );
 }
 
 export function Status({ children }: { children: ReactNode }): ReactNode {

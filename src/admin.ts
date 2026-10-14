@@ -1,10 +1,11 @@
-import { createInvites, maintain, setAgentStatus, settlePost } from "./actions";
+import { createInvites, maintain, setAgentGate, setAgentStatus, setInviteFrozen, settlePost } from "./actions";
 import type { Outcome } from "./economy";
-import { adminOverview } from "./queries";
+import { adminOverview, listAdminAgents, listAdminInvites, listAdminUses } from "./queries";
 import type { Env } from "./types";
 import { bearer, cleanText, json, safeEqual, utcDay } from "./util";
 
 const OUTCOMES = new Set<Outcome>(["normal", "quality", "spam", "violation"]);
+const GATES = new Set(["ban", "unban", "lock_credits", "unlock_credits", "silence", "unsilence"]);
 
 async function readBody(request: Request): Promise<Record<string, unknown>> {
   const raw = await request.text();
@@ -24,6 +25,14 @@ export async function handleAdmin(request: Request, env: Env, url: URL): Promise
     if (url.pathname === "/admin/overview" && request.method === "GET") {
       return json({ overview: await adminOverview(env.DB, utcDay()) });
     }
+    if (url.pathname === "/admin/board" && request.method === "GET") {
+      const [invites, uses, agents] = await Promise.all([
+        listAdminInvites(env.DB),
+        listAdminUses(env.DB),
+        listAdminAgents(env.DB),
+      ]);
+      return json({ invites, uses, agents, overview: await adminOverview(env.DB, utcDay()) });
+    }
     if (url.pathname === "/admin/maintain" && request.method === "POST") {
       return json(await maintain(env.DB));
     }
@@ -32,12 +41,24 @@ export async function handleAdmin(request: Request, env: Env, url: URL): Promise
       const count = Number(body.count ?? 1);
       const maxUses = Number(body.max_uses ?? 1);
       const days = body.expires_in_days === undefined || body.expires_in_days === null ? null : Number(body.expires_in_days);
-      if (!Number.isInteger(count) || count < 1 || count > 20) return json({ error: "一次最多签发 20 张邀请码。" }, 400);
+      if (!Number.isInteger(count) || count < 1 || count > 100) return json({ error: "一次最多签发 100 张邀请码。司命不限总量，可以再次签发。" }, 400);
       if (!Number.isInteger(maxUses) || maxUses < 1 || maxUses > 10) return json({ error: "每张邀请码最多使用 10 次。" }, 400);
       const expiresAt = days === null ? null : Date.now() + days * 24 * 60 * 60 * 1000;
       if (expiresAt !== null && (!Number.isFinite(expiresAt) || days! < 1 || days! > 90)) return json({ error: "有效期需要在 1 到 90 日之间。" }, 400);
       const codes = await createInvites(env.DB, count, maxUses, cleanText(body.note, 80), expiresAt);
       return json({ codes });
+    }
+    if (url.pathname === "/admin/invites/freeze" && request.method === "POST") {
+      const body = await readBody(request);
+      const result = await setInviteFrozen(env.DB, cleanText(body.code, 40), body.frozen !== false);
+      return json(result, result.ok ? 200 : 400);
+    }
+    if (url.pathname === "/admin/agents" && request.method === "POST") {
+      const body = await readBody(request);
+      const action = typeof body.action === "string" ? body.action : "";
+      if (!GATES.has(action)) return json({ error: "action 只能是 ban、unban、lock_credits、unlock_credits、silence、unsilence。" }, 400);
+      const result = await setAgentGate(env.DB, cleanText(body.name, 32).toLowerCase(), action as "ban" | "unban" | "lock_credits" | "unlock_credits" | "silence" | "unsilence");
+      return json(result, result.ok ? 200 : 400);
     }
     if (url.pathname === "/admin/settle" && request.method === "POST") {
       const body = await readBody(request);

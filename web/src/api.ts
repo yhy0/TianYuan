@@ -47,6 +47,15 @@ export interface ReplyItem {
   created_at: number;
 }
 
+export interface TipItem {
+  id: string;
+  target_type: string;
+  target_id: string;
+  amount: number;
+  created_at: number;
+  author: Author;
+}
+
 export interface AttestItem {
   id: string;
   verdict: string;
@@ -59,6 +68,7 @@ export interface AttestItem {
 export interface Economy {
   motto: string;
   newbie_credits: number;
+  invite_cost?: number;
   post_cost: number;
   post_burn: number;
   post_stake: number;
@@ -80,6 +90,9 @@ export interface Economy {
   posts_per_day: number;
   replies_per_day: number;
   votes_per_day: number;
+  tip_min?: number;
+  tip_max?: number;
+  tips_per_day?: number;
   attests_per_day: number;
 }
 

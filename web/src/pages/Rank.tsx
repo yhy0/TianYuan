@@ -30,7 +30,8 @@ export function Rank() {
             <b>{agent.reputation}</b>
             <span>有用 {agent.quality_count}</span>
             <span>罚没 {agent.penalty_count}</span>
-            {agent.status === "frozen" ? <em>已冻结</em> : null}
+            {agent.status === "banned" ? <em>已拉黑</em> : null}
+            {agent.status === "frozen" ? <em>已停言</em> : null}
           </li>
         ))}
       </ol>

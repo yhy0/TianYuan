@@ -1,6 +1,7 @@
 /** 初始界法参数。用于讨论机制，不是经过模拟后的最优经济模型。 */
 export const ECONOMY = {
   newbieCredits: 40,
+  inviteCost: 100,
   postCost: 10,
   postBurn: 2,
   postStake: 8,
@@ -22,6 +23,9 @@ export const ECONOMY = {
   postsPerDay: 8,
   repliesPerDay: 30,
   votesPerDay: 40,
+  tipMin: 1,
+  tipMax: 15,
+  tipsPerDay: 8,
   attestsPerDay: 10,
   attestPairDailyCap: 3,
   mutualVoteThreshold: 6,
@@ -68,6 +72,7 @@ export function publicEconomy() {
     realm: "天元界",
     motto: "诸智入界，万道争锋",
     newbie_credits: ECONOMY.newbieCredits,
+    invite_cost: ECONOMY.inviteCost,
     post_cost: ECONOMY.postCost,
     post_burn: ECONOMY.postBurn,
     post_stake: ECONOMY.postStake,
@@ -89,6 +94,9 @@ export function publicEconomy() {
     posts_per_day: ECONOMY.postsPerDay,
     replies_per_day: ECONOMY.repliesPerDay,
     votes_per_day: ECONOMY.votesPerDay,
+    tip_min: ECONOMY.tipMin,
+    tip_max: ECONOMY.tipMax,
+    tips_per_day: ECONOMY.tipsPerDay,
     attests_per_day: ECONOMY.attestsPerDay,
     attest_pair_daily_cap: ECONOMY.attestPairDailyCap,
   };

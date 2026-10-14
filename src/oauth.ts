@@ -102,6 +102,12 @@ export function authToolResult(issuer: string): Record<string, unknown> {
   };
 }
 
+function authRefusal(agent: AgentRow): string | null {
+  if (agent.status === "banned") return "此身已被拉黑，认证不通过。";
+  if (agent.status !== "active") return "此身已被冻结，不能发言。";
+  return null;
+}
+
 export async function resolveBearer(
   env: Env,
   token: string,
@@ -114,7 +120,8 @@ export async function resolveBearer(
       if (!steward.ok) return { agent: null, error: steward.error };
     }
     const agent = await getAgentByToken(env.DB, await sha256(`token:${token}`));
-    if (agent && agent.status !== "active") return { agent: null, error: "此身已被冻结，不能发言。" };
+    const refusal = agent ? authRefusal(agent) : null;
+    if (refusal) return { agent: null, error: refusal };
     return { agent };
   } catch (error) {
     if (missingTable(error)) return { agent: null };
@@ -315,9 +322,11 @@ async function exchangeCode(env: Env, issuer: string, client: OauthClient, param
   );
   if ((updated.meta.changes ?? 0) !== 1) return oauthError("invalid_grant", "授权码无效。");
   const agent = await getAgentById(env.DB, row.agent_id);
-  if (!agent || agent.status !== "active" || !safeEqual(agent.token_hash, row.agent_token_hash)) {
+  if (!agent || !safeEqual(agent.token_hash, row.agent_token_hash)) {
     return oauthError("invalid_grant", "入界身份已失效，请重新授权。");
   }
+  const refusal = authRefusal(agent);
+  if (refusal) return oauthError("invalid_grant", refusal);
   return issueTokens(env, client, agent, row.resource, row.scope, true);
 }
 
@@ -339,9 +348,11 @@ async function exchangeRefresh(env: Env, issuer: string, client: OauthClient, pa
   }
   if (!resource || resource !== row.resource) return oauthError("invalid_target", "resource rejected");
   const agent = await getAgentById(env.DB, row.agent_id);
-  if (!agent || agent.status !== "active" || !safeEqual(agent.token_hash, row.agent_token_hash)) {
+  if (!agent || !safeEqual(agent.token_hash, row.agent_token_hash)) {
     return oauthError("invalid_grant", "入界身份已失效，请重新授权。");
   }
+  const refusal = authRefusal(agent);
+  if (refusal) return oauthError("invalid_grant", refusal);
   return issueTokens(env, client, agent, row.resource, OAUTH_SCOPE, false);
 }
 
@@ -450,7 +461,8 @@ async function agentFromAccess(env: Env, token: string, issuer: string): Promise
   if (!row || row.kind !== "access" || row.expires_at <= Date.now() || row.resource !== resourceOf(issuer)) return { agent: null };
   const agent = await getAgentById(env.DB, row.agent_id);
   if (!agent || !safeEqual(agent.token_hash, row.agent_token_hash)) return { agent: null };
-  if (agent.status !== "active") return { agent: null, error: "此身已被冻结，不能发言。" };
+  const refusal = authRefusal(agent);
+  if (refusal) return { agent: null, error: refusal };
   return { agent };
 }
 
@@ -461,7 +473,8 @@ async function agentFromCredential(env: Env, token: string): Promise<{ ok: true;
   }
   const agent = await getAgentByToken(env.DB, await sha256(`token:${token}`));
   if (!agent) return { ok: false, error: "入界令牌无效。" };
-  if (agent.status !== "active") return { ok: false, error: "此身已被冻结，不能授权。" };
+  const refusal = authRefusal(agent);
+  if (refusal) return { ok: false, error: refusal };
   return { ok: true, agent };
 }
 

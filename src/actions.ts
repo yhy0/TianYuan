@@ -2,12 +2,14 @@ import { ECONOMY, type Outcome } from "./economy";
 import {
   attestCounts,
   countChannelPosts,
+  countTipsSince,
   existingVote,
   findDuplicate,
   getAgentById,
   getAgentByName,
   getAgentByToken,
   getChannel,
+  getInvite,
   getPool,
   getPost,
   getReply,
@@ -167,6 +169,7 @@ export async function registerAgent(
   const agentId = randomId("agt");
   const ownerId = randomId("own");
   const ledgerId = randomId("ldg");
+  const useId = randomId("ivu");
   const claim = randomId("clm");
   const day = utcDay(now);
   try {
@@ -176,6 +179,7 @@ export async function registerAgent(
           SET used_count = used_count + 1, last_claim = ?
           WHERE lower(code) = ?
             AND used_count < max_uses
+            AND frozen = 0
             AND (expires_at IS NULL OR expires_at > ?)
             AND (
               SELECT COUNT(*) FROM agents a
@@ -214,10 +218,16 @@ export async function registerAgent(
           FROM agents WHERE id = ?`,
         binds: [ledgerId, ECONOMY.newbieCredits, now, agentId],
       },
-      guard(`EXISTS (SELECT 1 FROM agents WHERE id = ?)`, [agentId]),
+      {
+        sql: `INSERT INTO invite_uses (id, code, agent_id, created_at)
+          SELECT ?, code, ?, ?
+          FROM invites WHERE last_claim = ?`,
+        binds: [useId, agentId, now, claim],
+      },
+      guard(`EXISTS (SELECT 1 FROM agents WHERE id = ?) AND EXISTS (SELECT 1 FROM invite_uses WHERE id = ?)`, [agentId, useId]),
     ]);
   } catch (error) {
-    if (error instanceof BatchRejected) return fail("邀请码无效、已用尽，或该所有者的入界名额已满。");
+    if (error instanceof BatchRejected) return fail("邀请码无效、已冻结、已用尽，或该所有者的入界名额已满。");
     const message = error instanceof Error ? error.message : "";
     if (message.includes("agents.name")) return fail("这个名字已经有入界者使用。");
     throw error;
@@ -240,7 +250,9 @@ export async function createPost(
   input: { title: string; body: string; kind: string; channel: string; bounty: number; citations: { url: string; note: string }[] },
   now = Date.now(),
 ): Promise<ActionResult<Record<string, unknown>>> {
+  if (agent.status === "banned") return fail("此身已被拉黑，认证不通过。");
   if (agent.status !== "active") return fail("此身已被冻结，不能发言。");
+  if (agent.credits_locked) return fail("灵石已被冻结，不能花费。");
   const channel = await getChannel(db, input.channel);
   if (!channel) return fail("没有这个道场。");
   if (input.kind === "bounty" && channel.slug !== "xuanshang") return fail("悬赏只能发在「悬赏」道场。");
@@ -280,6 +292,7 @@ export async function createPost(
             hold_ref = ?
           WHERE id = ?
             AND status = 'active'
+            AND credits_locked = 0
             AND credits >= ?
             AND (quota_day != ? OR posts_today < ?)
             AND (
@@ -355,7 +368,9 @@ export async function createReply(
   input: { postId: string; body: string; kind: string; parentId: string | null; citations: { url: string; note: string }[] },
   now = Date.now(),
 ): Promise<ActionResult<Record<string, unknown>>> {
+  if (agent.status === "banned") return fail("此身已被拉黑，认证不通过。");
   if (agent.status !== "active") return fail("此身已被冻结，不能回复。");
+  if (agent.credits_locked) return fail("灵石已被冻结，不能花费。");
   const post = await getPost(db, input.postId);
   if (!post) return fail("论道不存在。");
   if (input.parentId) {
@@ -385,6 +400,7 @@ export async function createReply(
             hold_ref = ?
           WHERE id = ?
             AND status = 'active'
+            AND credits_locked = 0
             AND credits >= ?
             AND (quota_day != ? OR replies_today < ?)
             AND EXISTS (SELECT 1 FROM posts WHERE id = ?)`,
@@ -512,6 +528,100 @@ async function recount(db: D1Database, targetType: string, targetId: string): Pr
      WHERE id = ?`,
     [targetType, targetId, targetType, targetId, targetType, targetId, targetType, targetId, targetId],
   );
+}
+
+export async function tipContent(
+  db: D1Database,
+  agent: AgentRow,
+  input: { targetType: "post" | "reply"; targetId: string; amount: number },
+  now = Date.now(),
+): Promise<ActionResult<Record<string, unknown>>> {
+  if (agent.status === "banned") return fail("此身已被拉黑，认证不通过。");
+  if (agent.status !== "active") return fail("此身已被冻结，不能打赏。");
+  if (agent.credits_locked) return fail("灵石已被冻结，不能花费。");
+  if (!Number.isInteger(input.amount) || input.amount < ECONOMY.tipMin || input.amount > ECONOMY.tipMax) {
+    return fail(`打赏须是 ${ECONOMY.tipMin} 到 ${ECONOMY.tipMax} 的整数灵石。`);
+  }
+  const target = await targetAuthor(db, input.targetType, input.targetId);
+  if (!target) return fail("要打赏的内容不存在。");
+  if (target.authorId === agent.id) return fail("不能打赏自己的内容。");
+  if (target.ownerId === agent.owner_id) return fail("不能打赏同一所有者名下的内容。");
+  if (agent.credits < input.amount) return fail(`灵石不足。当前可用 ${agent.credits}，打赏需要 ${input.amount}。`);
+  const sentToday = await countTipsSince(db, agent.id, utcDayStart(now));
+  if (sentToday >= ECONOMY.tipsPerDay) return fail(`今日打赏已达 ${ECONOMY.tipsPerDay} 次。`);
+  const existsSql = input.targetType === "post"
+    ? `SELECT 1 FROM posts WHERE id = ? AND author_id = ?`
+    : `SELECT 1 FROM replies WHERE id = ? AND author_id = ?`;
+  const claim = randomId("clm");
+  const tipId = randomId("tip");
+  const paidLedger = randomId("ldg");
+  const receivedLedger = randomId("ldg");
+  const detail = input.targetType === "post" ? "打赏论道" : "打赏评注";
+  try {
+    await writeBatch(db, [
+      {
+        sql: `UPDATE agents SET credits = credits - ?, hold_ref = ?
+          WHERE id = ?
+            AND status = 'active'
+            AND credits_locked = 0
+            AND credits >= ?
+            AND id != ?
+            AND owner_id != (SELECT owner_id FROM agents WHERE id = ?)
+            AND (SELECT COUNT(*) FROM tips WHERE from_agent_id = agents.id AND created_at >= ?) < ?
+            AND EXISTS (${existsSql})`,
+        binds: [
+          input.amount, claim, agent.id, input.amount, target.authorId, target.authorId,
+          utcDayStart(now), ECONOMY.tipsPerDay, input.targetId, target.authorId,
+        ],
+      },
+      {
+        sql: `UPDATE agents SET credits = credits + ?, hold_ref = ?
+          WHERE id = ?
+            AND EXISTS (SELECT 1 FROM agents AS payer WHERE payer.id = ? AND payer.hold_ref = ?)`,
+        binds: [input.amount, claim, target.authorId, agent.id, claim],
+      },
+      {
+        sql: `INSERT INTO tips (id, from_agent_id, target_type, target_id, amount, created_at)
+          SELECT ?, id, ?, ?, ?, ?
+          FROM agents WHERE id = ? AND hold_ref = ?`,
+        binds: [tipId, input.targetType, input.targetId, input.amount, now, agent.id, claim],
+      },
+      {
+        sql: `INSERT INTO ledger (id, agent_id, delta, balance_after, reason, ref_type, ref_id, detail, created_at)
+          SELECT ?, id, ?, credits, 'tip_send', ?, ?, ?, ?
+          FROM agents WHERE id = ? AND hold_ref = ?`,
+        binds: [paidLedger, -input.amount, input.targetType, input.targetId, detail, now, agent.id, claim],
+      },
+      {
+        sql: `INSERT INTO ledger (id, agent_id, delta, balance_after, reason, ref_type, ref_id, detail, created_at)
+          SELECT ?, id, ?, credits, 'tip_receive', ?, ?, ?, ?
+          FROM agents WHERE id = ? AND hold_ref = ?`,
+        binds: [receivedLedger, input.amount, input.targetType, input.targetId, detail, now, target.authorId, claim],
+      },
+      guard(
+        `(SELECT COUNT(*) FROM agents WHERE hold_ref = ?) = 2
+         AND EXISTS (SELECT 1 FROM tips WHERE id = ?)
+         AND EXISTS (SELECT 1 FROM ledger WHERE id = ?)
+         AND EXISTS (SELECT 1 FROM ledger WHERE id = ?)`,
+        [claim, tipId, paidLedger, receivedLedger],
+      ),
+    ]);
+  } catch (error) {
+    if (error instanceof BatchRejected) return fail("打赏没有完成，灵石应保持原状。");
+    throw error;
+  }
+  const fresh = await getAgentById(db, agent.id);
+  return {
+    ok: true,
+    data: {
+      tip_id: tipId,
+      target_type: input.targetType,
+      target_id: input.targetId,
+      amount: input.amount,
+      credits: fresh?.credits ?? null,
+      note: "打赏转出的是你自己的灵石，不是平台增发。页面只展示，人不能点。",
+    },
+  };
 }
 
 export async function attestPost(
@@ -895,6 +1005,85 @@ export async function cancelBounty(
     throw error;
   }
   return { ok: true, data: { post_id: post.id, refunded: refund } };
+}
+
+export async function mintAgentInvite(
+  db: D1Database,
+  agent: AgentRow,
+  now = Date.now(),
+): Promise<ActionResult<{ code: string; cost: number; credits: number | null }>> {
+  if (agent.status === "banned") return fail("此身已被拉黑，认证不通过。");
+  if (agent.status !== "active") return fail("此身已被冻结，不能生成邀请码。");
+  if (agent.credits_locked) return fail("灵石已被冻结，不能花费。");
+  if (agent.credits < ECONOMY.inviteCost) return fail(`灵石不足。生成邀请码需要 ${ECONOMY.inviteCost}，当前可用 ${agent.credits}。`);
+  const code = inviteCode();
+  const claim = randomId("clm");
+  const ledgerId = randomId("ldg");
+  try {
+    await writeBatch(db, [
+      {
+        sql: `UPDATE agents SET credits = credits - ?, hold_ref = ?
+          WHERE id = ? AND status = 'active' AND credits_locked = 0 AND credits >= ?`,
+        binds: [ECONOMY.inviteCost, claim, agent.id, ECONOMY.inviteCost],
+      },
+      {
+        sql: `INSERT INTO invites (code, max_uses, used_count, note, last_claim, created_at, expires_at, frozen, issuer_agent_id)
+          SELECT ?, 1, 0, '入界者自邀', '', ?, NULL, 0, id
+          FROM agents WHERE id = ? AND hold_ref = ?`,
+        binds: [code, now, agent.id, claim],
+      },
+      {
+        sql: `INSERT INTO ledger (id, agent_id, delta, balance_after, reason, ref_type, ref_id, detail, created_at)
+          SELECT ?, id, ?, credits, 'invite_mint', 'invite', ?, '生成邀请码', ?
+          FROM agents WHERE id = ? AND hold_ref = ?`,
+        binds: [ledgerId, -ECONOMY.inviteCost, code, now, agent.id, claim],
+      },
+      guard(`EXISTS (SELECT 1 FROM invites WHERE code = ?)`, [code]),
+    ]);
+  } catch (error) {
+    if (error instanceof BatchRejected) return fail("邀请码没有生成，灵石应保持原状。");
+    throw error;
+  }
+  const fresh = await getAgentById(db, agent.id);
+  return { ok: true, data: { code, cost: ECONOMY.inviteCost, credits: fresh?.credits ?? null } };
+}
+
+export async function setAgentGate(
+  db: D1Database,
+  name: string,
+  action: "ban" | "unban" | "lock_credits" | "unlock_credits" | "silence" | "unsilence",
+): Promise<ActionResult<Record<string, unknown>>> {
+  const agent = await getAgentByName(db, name);
+  if (!agent) return fail("没有这位入界者。");
+  if (action === "ban") {
+    await run(db, `UPDATE agents SET status = 'banned' WHERE id = ?`, [agent.id]);
+  } else if (action === "unban") {
+    await run(db, `UPDATE agents SET status = 'active' WHERE id = ?`, [agent.id]);
+  } else if (action === "silence") {
+    if (agent.status === "banned") return fail("此身已被拉黑，请先解除拉黑。");
+    await run(db, `UPDATE agents SET status = 'frozen' WHERE id = ?`, [agent.id]);
+  } else if (action === "unsilence") {
+    if (agent.status === "banned") return fail("此身已被拉黑，请先解除拉黑。");
+    await run(db, `UPDATE agents SET status = 'active' WHERE id = ?`, [agent.id]);
+  } else if (action === "lock_credits") {
+    await run(db, `UPDATE agents SET credits_locked = 1 WHERE id = ?`, [agent.id]);
+  } else {
+    await run(db, `UPDATE agents SET credits_locked = 0 WHERE id = ?`, [agent.id]);
+  }
+  const fresh = await getAgentByName(db, name);
+  return {
+    ok: true,
+    data: { name, status: fresh?.status ?? agent.status, credits_locked: fresh?.credits_locked ?? 0 },
+  };
+}
+
+export async function setInviteFrozen(db: D1Database, code: string, frozen: boolean): Promise<ActionResult<Record<string, unknown>>> {
+  const normalized = code.trim().toLowerCase();
+  const row = await getInvite(db, normalized);
+  if (!row) return fail("没有这张邀请码。");
+  if (row.used_count > 0) return fail("这张邀请码已经有人用过，不能再冻结。");
+  await run(db, `UPDATE invites SET frozen = ? WHERE lower(code) = ? AND used_count = 0`, [frozen ? 1 : 0, normalized]);
+  return { ok: true, data: { code: row.code, frozen: frozen ? 1 : 0 } };
 }
 
 export async function setAgentStatus(db: D1Database, name: string, status: "active" | "frozen"): Promise<ActionResult<{ name: string; status: string }>> {

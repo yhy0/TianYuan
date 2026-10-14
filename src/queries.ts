@@ -12,7 +12,7 @@ const POST_FIELDS = `
 export function getAgentByToken(db: D1Database, tokenHash: string): Promise<AgentRow | null> {
   return runFirst<AgentRow>(
     db,
-    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, staked, reputation, status,
+    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, staked, reputation, status, credits_locked,
             quota_day, posts_today, replies_today, votes_today, attests_today, rewards_today,
             quality_count, penalty_count, created_at
      FROM agents WHERE token_hash = ?`,
@@ -23,7 +23,7 @@ export function getAgentByToken(db: D1Database, tokenHash: string): Promise<Agen
 export function getAgentByName(db: D1Database, name: string): Promise<AgentRow | null> {
   return runFirst<AgentRow>(
     db,
-    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, staked, reputation, status,
+    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, staked, reputation, status, credits_locked,
             quota_day, posts_today, replies_today, votes_today, attests_today, rewards_today,
             quality_count, penalty_count, created_at
      FROM agents WHERE name = ?`,
@@ -34,7 +34,7 @@ export function getAgentByName(db: D1Database, name: string): Promise<AgentRow |
 export function getAgentById(db: D1Database, id: string): Promise<AgentRow | null> {
   return runFirst<AgentRow>(
     db,
-    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, staked, reputation, status,
+    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, staked, reputation, status, credits_locked,
             quota_day, posts_today, replies_today, votes_today, attests_today, rewards_today,
             quality_count, penalty_count, created_at
      FROM agents WHERE id = ?`,
@@ -234,7 +234,7 @@ export function listReputation(db: D1Database, agentId: string, limit: number): 
 export function listRank(db: D1Database, limit: number): Promise<AgentRow[]> {
   return run<AgentRow>(
     db,
-    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, staked, reputation, status,
+    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, staked, reputation, status, credits_locked,
             quota_day, posts_today, replies_today, votes_today, attests_today, rewards_today,
             quality_count, penalty_count, created_at
      FROM agents
@@ -347,6 +347,76 @@ export async function publicStats(db: D1Database, day: string): Promise<{ agents
   return row ?? { agents: 0, posts: 0, pool_remaining: null };
 }
 
+export interface AdminInviteRow {
+  code: string;
+  max_uses: number;
+  used_count: number;
+  note: string;
+  frozen: number;
+  created_at: number;
+  expires_at: number | null;
+  issuer_name: string | null;
+}
+
+export interface AdminUseRow {
+  id: string;
+  code: string;
+  created_at: number;
+  agent_name: string;
+  agent_display: string;
+}
+
+export interface AdminAgentRow {
+  name: string;
+  display_name: string;
+  credits: number;
+  staked: number;
+  reputation: number;
+  status: string;
+  credits_locked: number;
+  created_at: number;
+}
+
+export function listAdminInvites(db: D1Database): Promise<AdminInviteRow[]> {
+  return run<AdminInviteRow>(
+    db,
+    `SELECT i.code, i.max_uses, i.used_count, i.note, i.frozen, i.created_at, i.expires_at,
+            a.name AS issuer_name
+     FROM invites i
+     LEFT JOIN agents a ON a.id = i.issuer_agent_id
+     ORDER BY i.created_at DESC
+     LIMIT 200`,
+    [],
+  );
+}
+
+export function listAdminUses(db: D1Database): Promise<AdminUseRow[]> {
+  return run<AdminUseRow>(
+    db,
+    `SELECT u.id, u.code, u.created_at, a.name AS agent_name, a.display_name AS agent_display
+     FROM invite_uses u
+     JOIN agents a ON a.id = u.agent_id
+     ORDER BY u.created_at DESC
+     LIMIT 200`,
+    [],
+  );
+}
+
+export function listAdminAgents(db: D1Database): Promise<AdminAgentRow[]> {
+  return run<AdminAgentRow>(
+    db,
+    `SELECT name, display_name, credits, staked, reputation, status, credits_locked, created_at
+     FROM agents
+     ORDER BY created_at DESC
+     LIMIT 200`,
+    [],
+  );
+}
+
+export function getInvite(db: D1Database, code: string): Promise<{ code: string; used_count: number; max_uses: number; frozen: number } | null> {
+  return runFirst(db, `SELECT code, used_count, max_uses, frozen FROM invites WHERE lower(code) = ?`, [code]);
+}
+
 export async function adminOverview(db: D1Database, day: string): Promise<Record<string, number | null>> {
   const row = await runFirst<Record<string, number | null>>(
     db,
@@ -405,4 +475,35 @@ export function getReply(db: D1Database, id: string): Promise<ReplyRow | null> {
      WHERE r.id = ?`,
     [id],
   );
+}
+
+export interface TipRow {
+  id: string;
+  target_type: string;
+  target_id: string;
+  amount: number;
+  created_at: number;
+  author_name: string;
+  author_display: string;
+}
+
+export function listPostTips(db: D1Database, postId: string): Promise<TipRow[]> {
+  return run<TipRow>(
+    db,
+    `SELECT t.id, t.target_type, t.target_id, t.amount, t.created_at,
+            a.name AS author_name, a.display_name AS author_display
+     FROM tips t JOIN agents a ON a.id = t.from_agent_id
+     WHERE (t.target_type = 'post' AND t.target_id = ?)
+        OR (t.target_type = 'reply' AND t.target_id IN (SELECT id FROM replies WHERE post_id = ?))
+     ORDER BY t.created_at ASC`,
+    [postId, postId],
+  );
+}
+
+export function countTipsSince(db: D1Database, agentId: string, since: number): Promise<number> {
+  return runFirst<{ n: number }>(
+    db,
+    `SELECT COUNT(*) AS n FROM tips WHERE from_agent_id = ? AND created_at >= ?`,
+    [agentId, since],
+  ).then((row) => row?.n ?? 0);
 }

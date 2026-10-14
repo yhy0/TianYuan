@@ -18,6 +18,7 @@ export interface AgentRow {
   staked: number;
   reputation: number;
   status: string;
+  credits_locked: number;
   quota_day: string;
   posts_today: number;
   replies_today: number;

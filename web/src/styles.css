@@ -33,7 +33,8 @@ button, input, select {
 button { cursor: pointer; }
 button:hover { border-color: var(--gold); }
 h1, h2 { font-family: "Iowan Old Style", Palatino, "Songti SC", "Noto Serif SC", serif; font-weight: 600; letter-spacing: 0.04em; }
-h1 { font-size: clamp(2.2rem, 5vw, 4rem); line-height: 1.05; margin: 0.2rem 0 0.6rem; }
+h1 { font-size: clamp(1.55rem, 2.2vw, 2rem); line-height: 1.25; margin: 0.15rem 0 0.7rem; }
+.post-title { font-size: clamp(1.5rem, 2.4vw, 1.9rem); line-height: 1.35; letter-spacing: 0.02em; margin: 0.15rem 0 0.45rem; }
 h2 { margin: 2rem 0 0.6rem; }
 
 .shell { max-width: 880px; margin: 0 auto; padding: 1.2rem 1.1rem 3rem; }
@@ -90,13 +91,54 @@ footer { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 3rem; padding-to
   border-radius: 0;
 }
 .fold:hover { border-color: transparent; text-decoration: underline; }
+.copy { padding: 0.18rem 0.65rem; font-size: 0.8rem; color: var(--gold); background: transparent; }
+.by .copy, .meta .copy { margin-left: auto; }
+.bundle { position: relative; margin-top: 0.4rem; cursor: pointer; }
+.bundle .copy { position: absolute; top: 0; right: 0; }
+.bundle > p { margin: 0; padding-right: 4.2rem; }
+.bundle pre { margin: 0.7rem 0 0; }
+.react { display: flex; gap: 0.4rem; flex-wrap: wrap; margin: 0.7rem 0 0.15rem; }
+.react button { cursor: default; color: var(--muted); background: transparent; opacity: 1; }
+.react button:hover, .react button:disabled { border-color: var(--line); opacity: 1; }
+.tips { list-style: none; padding: 0; margin: 0.35rem 0 0; display: flex; gap: 0.7rem; flex-wrap: wrap; color: var(--muted); font-size: 0.86rem; }
+.tips b { color: var(--gold); font-weight: 600; margin-left: 0.25rem; }
 .meta, .by, .foot { display: flex; gap: 0.7rem; flex-wrap: wrap; color: var(--muted); font-size: 0.88rem; }
 .note { background: rgba(212, 101, 79, 0.1); border-left: 3px solid var(--cinnabar); padding: 0.7rem 0.8rem; color: var(--text); }
 .prose { line-height: 1.8; overflow-wrap: anywhere; }
 .prose > :first-child { margin-top: 0.4rem; }
-.prose h2, .prose h3 { line-height: 1.35; }
-.prose h2 { font-size: 1.35rem; margin: 1.5rem 0 0.45rem; }
-.prose h3 { font-size: 1.12rem; margin: 1.2rem 0 0.35rem; }
+.prose h2, .prose h3, .prose h4 {
+  font-family: "Iowan Old Style", Palatino, "Songti SC", "Noto Serif SC", serif;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  line-height: 1.35;
+  scroll-margin-top: 1rem;
+}
+.prose h2 { font-size: 1.45rem; margin: 1.6rem 0 0.45rem; }
+.prose h3 { font-size: 1.35rem; margin: 1.5rem 0 0.45rem; }
+.prose h4 { font-size: 1.08rem; margin: 1.15rem 0 0.35rem; }
+.toc {
+  position: fixed;
+  top: 6.2rem;
+  right: calc((100vw - 880px) / 2 - 12.4rem);
+  width: 11rem;
+  max-height: calc(100vh - 8.5rem);
+  overflow: auto;
+  z-index: 2;
+}
+.toc p { margin: 0 0 0.45rem; color: var(--cinnabar); letter-spacing: 0.18em; font-size: 0.72rem; }
+.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.28rem; }
+.toc a {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  border-left: 2px solid transparent;
+  padding: 0.08rem 0 0.08rem 0.55rem;
+}
+.toc a.d1 { padding-left: 0.95rem; }
+.toc a.d2 { padding-left: 1.3rem; }
+.toc a.on { color: var(--gold); border-left-color: var(--cinnabar); text-decoration: none; }
+.toc a:hover { color: var(--text); text-decoration: none; }
 .prose p { margin: 0.55rem 0; }
 .prose ul, .prose ol { margin: 0.35rem 0 0.8rem; padding-left: 1.25rem; }
 .prose li { margin: 0.28rem 0; }
@@ -118,10 +160,20 @@ footer { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 3rem; padding-to
 pre, code { font-family: "SFMono-Regular", ui-monospace, monospace; }
 pre { overflow: auto; background: #0c0f0d; border-radius: 14px; padding: 1rem; border: 1px solid var(--line); }
 .stack { display: grid; gap: 0.7rem; max-width: 28rem; }
+.tabs { display: flex; gap: 0.4rem; flex-wrap: wrap; margin: 1rem 0; }
+.tabs button.on { background: var(--cinnabar); border-color: var(--cinnabar); color: #1a0d0b; }
+.table-wrap { overflow-x: auto; margin-top: 0.8rem; }
+.admin { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+.admin th, .admin td { text-align: left; padding: 0.5rem 0.4rem; border-bottom: 1px solid var(--line); vertical-align: middle; white-space: nowrap; }
+.admin button { padding: 0.25rem 0.6rem; font-size: 0.78rem; }
 label { display: grid; gap: 0.3rem; color: var(--muted); font-size: 0.88rem; }
 input, select { border-radius: 12px; width: 100%; }
 .cites { padding-left: 1.1rem; }
 ul, ol { line-height: 1.7; }
+
+@media (max-width: 1280px) {
+  .toc { display: none; }
+}
 
 @media (max-width: 720px) {
   .top { flex-direction: column; align-items: flex-start; }
