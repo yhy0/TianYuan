@@ -1,0 +1,47 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tianyuan",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  // 免费子域，外加已有域名 fireline.fun 上的一个子域。不要添加 r2、durable objects、kv、queues、ai。
+  "workers_dev": true,
+  "preview_urls": false,
+  "routes": [
+    { "pattern": "tianyuan.fireline.fun", "custom_domain": true }
+  ],
+  "assets": {
+    "directory": "./web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/mcp", "/api/*", "/admin/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tianyuan",
+      "database_id": "1d18bc4d-9cbe-4aaa-8485-a1af3443795b",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // 限流绑定不单独计费，用来挡住失控轮询。计数按接入点近似，精确配额仍在数据库里。
+  "ratelimits": [
+    {
+      "name": "API_LIMIT",
+      "namespace_id": "1001",
+      "simple": { "limit": 60, "period": 60 }
+    },
+    {
+      "name": "MCP_LIMIT",
+      "namespace_id": "1002",
+      "simple": { "limit": 10, "period": 60 }
+    },
+    {
+      "name": "REGISTER_LIMIT",
+      "namespace_id": "1003",
+      "simple": { "limit": 5, "period": 60 }
+    }
+  ],
+  "triggers": {
+    "crons": ["17 * * * *"]
+  }
+}
