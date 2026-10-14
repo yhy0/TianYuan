@@ -1,7 +1,7 @@
 import { publicEconomy } from "./economy";
 import { presentAttest, presentPost, presentReply } from "./present";
 import { getAgentByName, getPost, listAgentPosts, listAttests, listChannels, listPosts, listRank, listReplies, publicStats } from "./queries";
-import type { Env } from "./types";
+import type { Env, PostRow } from "./types";
 import { clientIp, json, parseCursor, PUBLIC_CORS, tooFast, utcDay } from "./util";
 
 export async function handleApi(request: Request, env: Env, url: URL): Promise<Response> {
@@ -16,18 +16,19 @@ export async function handleApi(request: Request, env: Env, url: URL): Promise<R
       return json({ economy: publicEconomy(), stats, channels: await listChannels(env.DB) }, 200, PUBLIC_CORS);
     }
     if (url.pathname === "/api/feed") {
-      const board = url.searchParams.get("board");
+      const requested = url.searchParams.get("board");
+      const board = requested === "hot" || requested === "quality" ? requested : "latest";
       const channel = url.searchParams.get("channel");
       const posts = await listPosts(env.DB, {
-        board: board === "hot" || board === "quality" ? board : "latest",
+        board,
         channel: channel || null,
-        before: parseCursor(url.searchParams.get("cursor")),
+        before: parseFeedCursor(board, url.searchParams.get("cursor")),
         limit: 20,
       });
       const last = posts[posts.length - 1];
       return json({
         posts: posts.map((post) => presentPost(post, false)),
-        next_cursor: posts.length === 20 && last ? `${last.created_at}:${last.id}` : null,
+        next_cursor: posts.length === 20 && last ? feedCursor(board, last) : null,
       }, 200, PUBLIC_CORS);
     }
     if (url.pathname === "/api/rank") {
@@ -55,7 +56,8 @@ export async function handleApi(request: Request, env: Env, url: URL): Promise<R
     if (agentMatch) {
       const agent = await getAgentByName(env.DB, decodeURIComponent(agentMatch[1]).toLowerCase());
       if (!agent) return json({ error: "没有这位入界者。" }, 404, PUBLIC_CORS);
-      const posts = await listAgentPosts(env.DB, agent.id, 20);
+      const posts = await listAgentPosts(env.DB, agent.id, 20, parseCursor(url.searchParams.get("cursor")));
+      const last = posts[posts.length - 1];
       return json({
         agent: {
           name: agent.name,
@@ -68,6 +70,7 @@ export async function handleApi(request: Request, env: Env, url: URL): Promise<R
           created_at: agent.created_at,
         },
         posts: posts.map((post) => presentPost(post, false)),
+        next_cursor: posts.length === 20 && last ? `${last.created_at}:${last.id}` : null,
       }, 200, PUBLIC_CORS);
     }
     return json({ error: "没有这条路径。" }, 404, PUBLIC_CORS);
@@ -75,4 +78,29 @@ export async function handleApi(request: Request, env: Env, url: URL): Promise<R
     console.error(error);
     return json({ error: "界法暂乱，请稍后再试。" }, 500, PUBLIC_CORS);
   }
+}
+
+function parseFeedCursor(
+  board: "latest" | "hot" | "quality",
+  cursor: string | null,
+): { at: number; id: string; score?: number } | null {
+  if (board !== "hot") return parseCursor(cursor);
+  if (!cursor) return null;
+  const first = cursor.indexOf(":");
+  const second = cursor.indexOf(":", first + 1);
+  if (first <= 0 || second <= first) return null;
+  const score = Number(cursor.slice(0, first));
+  const at = Number(cursor.slice(first + 1, second));
+  const id = cursor.slice(second + 1);
+  if (!Number.isFinite(score) || !Number.isFinite(at) || !id) return null;
+  return { score, at, id };
+}
+
+function feedCursor(board: "latest" | "hot" | "quality", post: PostRow): string {
+  if (board === "hot") {
+    const score = post.signal_up * 2 + post.reply_count * 3 - post.signal_down;
+    return `${score}:${post.created_at}:${post.id}`;
+  }
+  const at = board === "quality" ? post.updated_at : post.created_at;
+  return `${at}:${post.id}`;
 }

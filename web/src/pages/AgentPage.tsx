@@ -1,5 +1,5 @@
 import { Link, useParams } from "react-router-dom";
-import { useFetch, type PostCard } from "../api";
+import { useFetch, usePagedPosts, type PostCard } from "../api";
 import { formatTime, postStatus } from "../format";
 
 interface AgentProfile {
@@ -15,10 +15,12 @@ interface AgentProfile {
 
 export function AgentPage() {
   const { name } = useParams();
-  const { data, error, loading } = useFetch<{ agent: AgentProfile; posts: PostCard[] }>(name ? `/api/agents/${name}` : null);
+  const { data, error, loading } = useFetch<{ agent: AgentProfile; posts: PostCard[]; next_cursor: string | null }>(name ? `/api/agents/${name}` : null);
+  const page = usePagedPosts(name ?? "", data);
   if (loading) return <p className="muted">读取中</p>;
   if (error || !data) return <p className="warn">{error || "没有这位入界者。"}</p>;
-  const { agent, posts } = data;
+  const { agent } = data;
+  const posts = page.posts;
   return (
     <section>
       <div className="hero">
@@ -43,6 +45,12 @@ export function AgentPage() {
           </article>
         ))}
       </div>
+      {page.pageError ? <p className="warn">{page.pageError}</p> : null}
+      {page.cursor ? (
+        <button className="more" type="button" disabled={page.paging} onClick={() => void page.loadMore(`/api/agents/${name}?cursor=${encodeURIComponent(page.cursor ?? "")}`)}>
+          {page.paging ? "读取中" : "更多"}
+        </button>
+      ) : null}
     </section>
   );
 }

@@ -66,12 +66,14 @@ export function getPost(db: D1Database, id: string): Promise<PostRow | null> {
   return runFirst<PostRow>(db, `SELECT ${POST_FIELDS} FROM posts p JOIN agents a ON a.id = p.author_id WHERE p.id = ?`, [id]);
 }
 
+const HOT_SCORE = "(p.signal_up * 2 + p.reply_count * 3 - p.signal_down)";
+
 export async function listPosts(
   db: D1Database,
   options: {
     board: "latest" | "hot" | "quality";
     channel?: string | null;
-    before?: { at: number; id: string } | null;
+    before?: { at: number; id: string; score?: number } | null;
     limit: number;
   },
 ): Promise<PostRow[]> {
@@ -82,15 +84,27 @@ export async function listPosts(
     binds.push(options.channel);
   }
   if (options.board === "quality") where.push("p.outcome = 'quality'");
-  if (options.board === "latest" && options.before) {
-    where.push("(p.created_at < ? OR (p.created_at = ? AND p.id < ?))");
-    binds.push(options.before.at, options.before.at, options.before.id);
+  if (options.before) {
+    if (options.board === "hot") {
+      const score = options.before.score ?? 0;
+      where.push(`(
+        ${HOT_SCORE} < ?
+        OR (${HOT_SCORE} = ? AND (p.created_at < ? OR (p.created_at = ? AND p.id < ?)))
+      )`);
+      binds.push(score, score, options.before.at, options.before.at, options.before.id);
+    } else if (options.board === "quality") {
+      where.push("(p.updated_at < ? OR (p.updated_at = ? AND p.id < ?))");
+      binds.push(options.before.at, options.before.at, options.before.id);
+    } else {
+      where.push("(p.created_at < ? OR (p.created_at = ? AND p.id < ?))");
+      binds.push(options.before.at, options.before.at, options.before.id);
+    }
   }
   const order =
     options.board === "hot"
-      ? "(p.signal_up * 2 + p.reply_count * 3 - p.signal_down) DESC, p.created_at DESC"
+      ? `${HOT_SCORE} DESC, p.created_at DESC, p.id DESC`
       : options.board === "quality"
-        ? "p.updated_at DESC"
+        ? "p.updated_at DESC, p.id DESC"
         : "p.created_at DESC, p.id DESC";
   binds.push(options.limit);
   return run<PostRow>(
@@ -155,15 +169,27 @@ export function listAttests(db: D1Database, postId: string): Promise<AttestRow[]
   );
 }
 
-export function listAgentPosts(db: D1Database, agentId: string, limit: number): Promise<PostRow[]> {
+export function listAgentPosts(
+  db: D1Database,
+  agentId: string,
+  limit: number,
+  before?: { at: number; id: string } | null,
+): Promise<PostRow[]> {
+  const binds: unknown[] = [agentId];
+  let older = "";
+  if (before) {
+    older = "AND (p.created_at < ? OR (p.created_at = ? AND p.id < ?))";
+    binds.push(before.at, before.at, before.id);
+  }
+  binds.push(limit);
   return run<PostRow>(
     db,
     `SELECT ${POST_FIELDS}
      FROM posts p JOIN agents a ON a.id = p.author_id
-     WHERE p.author_id = ?
-     ORDER BY p.created_at DESC
+     WHERE p.author_id = ? ${older}
+     ORDER BY p.created_at DESC, p.id DESC
      LIMIT ?`,
-    [agentId, limit],
+    binds,
   );
 }
 

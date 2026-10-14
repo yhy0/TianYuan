@@ -44,26 +44,63 @@ export function PostPage() {
       ))}
       <h2>评注</h2>
       {replies.length === 0 ? <p className="muted">还没有评注。</p> : null}
-      {replies.map((item) => (
-        <section key={item.id} className="reply">
-          <p className="meta">
-            <span>{item.kind_label}</span>
-            <Link to={`/a/${item.author.name}`}>{item.author.display_name}</Link>
-            <span>{formatTime(item.created_at)}</span>
-            <span>赞同 {item.signal_up}</span>
-          </p>
-          <Prose text={item.body} />
-          {item.citations.length > 0 ? (
-            <ul className="cites">
-              {item.citations.map((cite) => (
-                <li key={cite.url}>
-                  <a href={cite.url} target="_blank" rel="noreferrer">{cite.note || cite.url}</a>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </section>
-      ))}
+      <ReplyTree nodes={threadReplies(replies)} />
     </article>
+  );
+}
+
+interface ReplyNode {
+  reply: ReplyItem;
+  children: ReplyNode[];
+}
+
+function threadReplies(replies: ReplyItem[]): ReplyNode[] {
+  const ids = new Set(replies.map((item) => item.id));
+  const byParent = new Map<string | null, ReplyItem[]>();
+  for (const reply of replies) {
+    const parent = reply.parent_id && ids.has(reply.parent_id) ? reply.parent_id : null;
+    const list = byParent.get(parent) ?? [];
+    list.push(reply);
+    byParent.set(parent, list);
+  }
+  function nest(parent: string | null, seen: Set<string>): ReplyNode[] {
+    return (byParent.get(parent) ?? []).flatMap((reply) => {
+      if (seen.has(reply.id)) return [];
+      const next = new Set(seen);
+      next.add(reply.id);
+      return [{ reply, children: nest(reply.id, next) }];
+    });
+  }
+  return nest(null, new Set());
+}
+
+function ReplyTree({ nodes }: { nodes: ReplyNode[] }) {
+  if (nodes.length === 0) return null;
+  return (
+    <div className="thread">
+      {nodes.map((node) => (
+        <div key={node.reply.id}>
+          <section className="reply">
+            <p className="meta">
+              <span>{node.reply.kind_label}</span>
+              <Link to={`/a/${node.reply.author.name}`}>{node.reply.author.display_name}</Link>
+              <span>{formatTime(node.reply.created_at)}</span>
+              <span>赞同 {node.reply.signal_up}</span>
+            </p>
+            <Prose text={node.reply.body} />
+            {node.reply.citations.length > 0 ? (
+              <ul className="cites">
+                {node.reply.citations.map((cite) => (
+                  <li key={cite.url}>
+                    <a href={cite.url} target="_blank" rel="noreferrer">{cite.note || cite.url}</a>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </section>
+          <ReplyTree nodes={node.children} />
+        </div>
+      ))}
+    </div>
   );
 }

@@ -60,7 +60,9 @@ footer { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 3rem; padding-to
 .chips, .row { display: flex; gap: 0.45rem; flex-wrap: wrap; margin: 1rem 0; }
 .chip { background: transparent; }
 .chip.on { background: var(--cinnabar); border-color: var(--cinnabar); color: #1a0d0b; }
-.list { display: grid; gap: 0.8rem; }
+.list, .thread { display: grid; gap: 0.8rem; }
+.thread .thread { margin: 0.7rem 0 0 0.8rem; padding-left: 0.8rem; border-left: 1px solid var(--line); }
+.more { margin-top: 1rem; }
 .card, .reply, .sheet {
   background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent 30%), var(--paper);
   border: 1px solid var(--line);
@@ -92,4 +94,5 @@ ul, ol { line-height: 1.7; }
   .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .rank li { grid-template-columns: 1.5rem 1fr auto; }
   .rank li span:nth-of-type(n + 3), .rank li em { display: none; }
+  .thread .thread { margin-left: 0.35rem; padding-left: 0.45rem; }
 }

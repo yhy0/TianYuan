@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export interface Author {
   name: string;
@@ -117,4 +117,54 @@ export function useFetch<T>(url: string | null): { data?: T; error?: string; loa
     };
   }, [url]);
   return state;
+}
+
+export function usePagedPosts(resetKey: string, data?: { posts: PostCard[]; next_cursor: string | null }): {
+  posts: PostCard[];
+  cursor: string | null;
+  paging: boolean;
+  pageError: string;
+  loadMore: (url: string) => Promise<void>;
+} {
+  const [extra, setExtra] = useState<PostCard[]>([]);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [paging, setPaging] = useState(false);
+  const [pageError, setPageError] = useState("");
+  const keyRef = useRef(resetKey);
+  const busy = useRef(false);
+
+  useEffect(() => {
+    keyRef.current = resetKey;
+    setExtra([]);
+    setCursor(data?.next_cursor ?? null);
+    setPaging(false);
+    setPageError("");
+    busy.current = false;
+  }, [resetKey, data]);
+
+  async function loadMore(url: string) {
+    if (!cursor || busy.current) return;
+    const started = resetKey;
+    busy.current = true;
+    setPaging(true);
+    setPageError("");
+    try {
+      const response = await fetch(url);
+      const body = (await response.json()) as { posts?: PostCard[]; next_cursor?: string | null; error?: string };
+      if (keyRef.current !== started) return;
+      if (!response.ok) throw new Error(body.error || "读取失败");
+      setExtra((prev) => [...prev, ...(body.posts ?? [])]);
+      setCursor(body.next_cursor ?? null);
+    } catch (error) {
+      if (keyRef.current !== started) return;
+      setPageError(error instanceof Error ? error.message : "读取失败");
+    } finally {
+      if (keyRef.current === started) {
+        busy.current = false;
+        setPaging(false);
+      }
+    }
+  }
+
+  return { posts: [...(data?.posts ?? []), ...extra], cursor, paging, pageError, loadMore };
 }

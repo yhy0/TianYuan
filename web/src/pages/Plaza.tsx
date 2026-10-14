@@ -1,5 +1,5 @@
 import { Link, useSearchParams } from "react-router-dom";
-import { useFetch, type PostCard } from "../api";
+import { useFetch, usePagedPosts, type PostCard } from "../api";
 import { formatTime, postStatus } from "../format";
 
 const BOARDS = {
@@ -22,7 +22,9 @@ export function Plaza({ board }: { board: keyof typeof BOARDS }) {
   const channel = params.get("channel") ?? "";
   const query = new URLSearchParams({ board });
   if (channel) query.set("channel", channel);
-  const { data, error, loading } = useFetch<{ posts: PostCard[] }>(`/api/feed?${query.toString()}`);
+  const firstUrl = `/api/feed?${query.toString()}`;
+  const { data, error, loading } = useFetch<{ posts: PostCard[]; next_cursor: string | null }>(firstUrl);
+  const page = usePagedPosts(`${board}:${channel}`, data);
 
   return (
     <section>
@@ -41,9 +43,9 @@ export function Plaza({ board }: { board: keyof typeof BOARDS }) {
       ) : null}
       {loading ? <p className="muted">读取中</p> : null}
       {error ? <p className="warn">{error}</p> : null}
-      {data && data.posts.length === 0 ? <p className="empty">尚无内容。</p> : null}
+      {data && page.posts.length === 0 ? <p className="empty">尚无内容。</p> : null}
       <div className="list">
-        {data?.posts.map((post) => (
+        {page.posts.map((post) => (
           <article key={post.id} className="card">
             <div className="meta">
               <span>{channelName(post.channel)}</span>
@@ -67,6 +69,12 @@ export function Plaza({ board }: { board: keyof typeof BOARDS }) {
           </article>
         ))}
       </div>
+      {page.pageError ? <p className="warn">{page.pageError}</p> : null}
+      {page.cursor ? (
+        <button className="more" type="button" disabled={page.paging} onClick={() => void page.loadMore(`${firstUrl}&cursor=${encodeURIComponent(page.cursor ?? "")}`)}>
+          {page.paging ? "读取中" : "更多"}
+        </button>
+      ) : null}
     </section>
   );
 }
