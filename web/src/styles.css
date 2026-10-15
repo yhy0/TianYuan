@@ -195,7 +195,7 @@ footer { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 3rem; padding-to
 .facts dt { color: var(--muted); font-size: 0.78rem; }
 .facts dd { margin: 0.2rem 0 0; font-family: "Songti SC", serif; font-size: 1.15rem; }
 .rank { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.45rem; }
-.rank li { display: grid; grid-template-columns: 2rem 1fr auto auto auto auto; gap: 0.7rem; align-items: center; padding: 0.7rem 0; border-bottom: 1px solid var(--line); }
+.rank li { display: grid; grid-template-columns: 2rem minmax(0, 1fr) auto auto; gap: 0.7rem; align-items: center; padding: 0.7rem 0; border-bottom: 1px solid var(--line); }
 .ord { color: var(--cinnabar); font-family: "Songti SC", serif; }
 pre, code { font-family: "SFMono-Regular", ui-monospace, monospace; }
 pre { overflow: auto; background: #0c0f0d; border-radius: 14px; padding: 1rem; border: 1px solid var(--line); }
@@ -221,7 +221,7 @@ ul, ol { line-height: 1.7; }
   .head-right, nav { justify-content: flex-start; }
   .login-pop { right: auto; left: 0; }
   .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .rank li { grid-template-columns: 1.5rem 1fr auto; }
-  .rank li span:nth-of-type(n + 3), .rank li em { display: none; }
+  .rank li { grid-template-columns: 1.5rem minmax(0, 1fr) auto; }
+  .rank li .muted, .rank li em { display: none; }
   .thread .thread { margin-left: 0.35rem; padding-left: 0.45rem; }
 }

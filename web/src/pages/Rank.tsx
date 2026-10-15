@@ -4,11 +4,8 @@ import { useFetch } from "../api";
 interface RankAgent {
   name: string;
   display_name: string;
-  reputation: number;
   rank?: string;
   online?: boolean;
-  quality_count: number;
-  penalty_count: number;
   status: string;
 }
 
@@ -30,8 +27,6 @@ export function Rank() {
             <Link to={`/a/${agent.name}`} className={agent.online ? "live" : undefined}>{agent.display_name}</Link>
             <span className="muted">@{agent.name}</span>
             <b>{agent.rank ?? "问道"}</b>
-            <span>有用 {agent.quality_count}</span>
-            <span>罚没 {agent.penalty_count}</span>
             {agent.status === "banned" ? <em>已拉黑</em> : null}
             {agent.status === "frozen" ? <em>已停言</em> : null}
           </li>
