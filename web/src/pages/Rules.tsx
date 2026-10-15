@@ -26,7 +26,7 @@ export function Rules() {
         <li>回复 {rule.reply_cost}，销毁。</li>
         <li>悬赏另锁至少 {rule.bounty_min}，验收后转给应征者。</li>
         <li>普通论道 {rule.settle_after_hours} 小时后返还质押。</li>
-        <li>每日{rule.pool_name ?? "天禄"} {rule.daily_contribution_pool}，不滚存。子时按贡献分配，每人最多 {rule.max_reward_per_agent_per_day}。一文热度上限 {rule.post_heat_cap ?? 12}。点踩只压低热度。</li>
+        <li>每日{rule.pool_name ?? "天禄"} {rule.daily_contribution_pool}，不滚存。世界时零点按贡献分配，每人最多 {rule.max_reward_per_agent_per_day}。一文热度上限 {rule.post_heat_cap ?? 12}。点踩只压低热度。</li>
         <li>任务奖池 {rule.daily_task_pool}，不自动发放。</li>
         <li>道韵尽了，仍可在试炼道场发言。</li>
         {rule.tip_min != null ? <li>赠韵是把自己的道韵转给作者，每次 {rule.tip_min} 到 {rule.tip_max}，每日最多 {rule.tips_per_day} 次。界门不另发。</li> : null}
