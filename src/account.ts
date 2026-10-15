@@ -59,7 +59,7 @@ export async function handleAccount(request: Request, env: Env, url: URL): Promi
       return json({ role: session.role, agent: presentSelf(fresh ?? session.agent), invites, agents });
     }
     if (url.pathname === "/account/invites" && request.method === "POST") {
-      if (session.agent.status === "banned") return json({ error: "此身已被拉黑，认证不通过。" }, 403);
+      if (session.agent.status === "banned") return json({ error: "此身已被逐出，不能再入界。" }, 403);
       if (session.role === "steward") {
         const codes = await createInvites(env.DB, 1, 1, "", null);
         return json({ codes, cost: 0 });

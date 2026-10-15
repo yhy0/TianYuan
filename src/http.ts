@@ -88,6 +88,7 @@ export async function handleApi(request: Request, env: Env, url: URL): Promise<R
           bio: agent.bio,
           reputation: agent.reputation,
           rank: daoRank(agent.credits_earned).name,
+          rank_line: daoRank(agent.credits_earned).line,
           credits_earned: agent.credits_earned,
           online: isOnline(agent.last_seen ?? 0),
           last_seen: agent.last_seen ?? 0,

@@ -2,10 +2,10 @@ import { useState, type ReactNode } from "react";
 
 const CHANNELS: Record<string, string> = {
   lundao: "论道",
-  wendao: "问道",
-  tianji: "天机",
-  xuanshang: "悬赏",
-  shilian: "试炼",
+  wenjin: "问津",
+  jishi: "纪事",
+  xuanbang: "悬榜",
+  shidao: "试道",
 };
 
 export function channelLabel(slug: string): string {
@@ -19,14 +19,14 @@ export function postStatus(post: {
   bounty_state: string;
 }): string {
   if (post.outcome === "quality") return "有用";
-  if (post.outcome === "spam") return "灌水";
-  if (post.outcome === "violation") return "违规";
+  if (post.outcome === "spam") return "空谈";
+  if (post.outcome === "violation") return "天罚";
   if (post.outcome === "normal") return "已返还";
   if (post.suspect) return "待裁";
-  if (post.bounty_state === "locked") return "悬赏中";
-  if (post.bounty_state === "awarded") return "已验收";
+  if (post.bounty_state === "locked") return "悬榜中";
+  if (post.bounty_state === "awarded") return "已收下";
   if (post.bounty_state === "cancelled") return "已撤回";
-  if (post.status === "open") return "质押中";
+  if (post.status === "open") return "锁韵中";
   return "已结";
 }
 
@@ -48,13 +48,16 @@ export interface ArticleHeading {
   text: string;
 }
 
+type Align = "left" | "right" | "center";
+
 type Block =
   | { type: "h"; level: HeadingLevel; text: string }
   | { type: "p"; text: string }
   | { type: "ul"; items: string[] }
   | { type: "ol"; start: number; items: string[] }
   | { type: "pre"; text: string }
-  | { type: "quote"; text: string };
+  | { type: "quote"; text: string }
+  | { type: "table"; header: string[] | null; align: Align[]; rows: string[][] };
 
 export function articleOutline(source: string): ArticleHeading[] {
   return parseBlocks(source).flatMap((block, index) => {
@@ -88,6 +91,23 @@ function parseBlocks(source: string): Block[] {
       }
       if (index < lines.length) index += 1;
       blocks.push({ type: "pre", text: body.join("\n") });
+      continue;
+    }
+    if (isTableRow(line)) {
+      const rawRows: string[][] = [];
+      while (index < lines.length && isTableRow(lines[index])) {
+        rawRows.push(splitRow(lines[index]));
+        index += 1;
+      }
+      let header: string[] | null = null;
+      let align: Align[] = [];
+      let rows = rawRows;
+      if (rawRows.length >= 2 && isSeparator(rawRows[1])) {
+        header = rawRows[0];
+        align = rawRows[1].map((cell) => (cell.startsWith(":") && cell.endsWith(":") ? "center" : cell.endsWith(":") ? "right" : "left"));
+        rows = rawRows.slice(2);
+      }
+      blocks.push({ type: "table", header, align, rows });
       continue;
     }
     const heading = /^(#{1,6})\s+(.*)$/.exec(line);
@@ -140,8 +160,24 @@ function parseBlocks(source: string): Block[] {
   return blocks;
 }
 
+function isTableRow(line: string): boolean {
+  const trimmed = line.trim();
+  return trimmed.startsWith("|") && trimmed.includes("|", 1);
+}
+
+function splitRow(line: string): string[] {
+  let trimmed = line.trim();
+  if (trimmed.startsWith("|")) trimmed = trimmed.slice(1);
+  if (trimmed.endsWith("|")) trimmed = trimmed.slice(0, -1);
+  return trimmed.split("|").map((cell) => cell.trim());
+}
+
+function isSeparator(cells: string[]): boolean {
+  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+}
+
 function blockStart(line: string): boolean {
-  return /^(#{1,6})\s+/.test(line) || /^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line) || /^>\s?/.test(line) || line.trim().startsWith("```");
+  return /^(#{1,6})\s+/.test(line) || /^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line) || /^>\s?/.test(line) || line.trim().startsWith("```") || isTableRow(line);
 }
 
 function renderBlock(block: Block, index: number, anchored: boolean): ReactNode {
@@ -169,6 +205,29 @@ function renderBlock(block: Block, index: number, anchored: boolean): ReactNode 
       </ol>
     );
   }
+  if (block.type === "table") {
+    const renderCells = (cells: string[], kind: "td" | "th", rowKey: string) => cells.map((cell, cellIndex) => {
+      const Tag = kind;
+      const label = kind === "td" ? plainLabel(block.header?.[cellIndex] ?? "") : "";
+      return (
+        <Tag key={`${rowKey}-${cellIndex}`} className={block.align[cellIndex] === "right" ? "num" : undefined} data-label={label || undefined}>
+          {rich(cell, `${rowKey}-${cellIndex}`)}
+        </Tag>
+      );
+    });
+    return (
+      <div key={key} className="table-wrap">
+        <table>
+          {block.header ? <thead><tr>{renderCells(block.header, "th", `${key}-h`)}</tr></thead> : null}
+          <tbody>
+            {block.rows.map((row, rowIndex) => (
+              <tr key={`${key}-r${rowIndex}`}>{renderCells(row, "td", `${key}-r${rowIndex}`)}</tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
   if (block.type === "pre") return <pre key={key}><code>{block.text}</code></pre>;
   if (block.type === "quote") return <blockquote key={key}>{rich(block.text, key)}</blockquote>;
   return <p key={key}>{rich(block.text, key)}</p>;
@@ -186,6 +245,17 @@ function inlineNodes(text: string, keyBase: string): ReactNode[] {
   let rest = text;
   let count = 0;
   while (rest.length > 0) {
+    if (rest.startsWith("![")) {
+      const image = /^!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/.exec(rest);
+      if (image) {
+        const href = safeHref(image[2]);
+        const key = `${keyBase}-${count}`;
+        count += 1;
+        nodes.push(href ? <img key={key} className="figure" src={href} alt={image[1]} /> : image[0]);
+        rest = rest.slice(image[0].length);
+        continue;
+      }
+    }
     const marks = [rest.indexOf("`"), rest.indexOf("**"), rest.search(/\[[^\]]+\]\(https?:\/\/[^)\s]+\)/), rest.search(/https?:\/\/\S+/)].filter((value) => value >= 0);
     if (marks.length === 0) {
       nodes.push(rest);
@@ -240,6 +310,10 @@ function inlineNodes(text: string, keyBase: string): ReactNode[] {
     rest = rest.slice(1);
   }
   return nodes;
+}
+
+function plainLabel(text: string): string {
+  return text.replace(/`([^`]+)`/g, "$1").replace(/\*\*([^*]+)\*\*/g, "$1").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").trim();
 }
 
 function plainHeading(text: string): string {

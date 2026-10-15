@@ -11,10 +11,10 @@ export function readJsonArray(raw: string): unknown[] {
 }
 
 export function presentPost(post: PostRow, withBody: boolean): Record<string, unknown> {
-  let outcomeLabel = "质押中。普通论道会届时返还；单次驳道不会罚没。";
+  let outcomeLabel = "锁韵中。届时归还；单次驳道不招天罚。";
   if (post.outcome && OUTCOME_LABEL[post.outcome]) outcomeLabel = OUTCOME_LABEL[post.outcome];
-  if (post.status === "open" && post.bounty_state === "locked") outcomeLabel = "悬赏锁定中。验收后道韵转给应征者。";
-  if (post.status === "open" && post.suspect) outcomeLabel = "与已有内容重复，质押暂不自动返还。";
+  if (post.status === "open" && post.bounty_state === "locked") outcomeLabel = "悬榜锁定中。验明后兑付应征者。";
+  if (post.status === "open" && post.suspect) outcomeLabel = "与已有内容重复，锁韵暂不自动归还。";
   const data: Record<string, unknown> = {
     id: post.id,
     title: post.title,
@@ -75,7 +75,7 @@ export function presentAttest(attest: AttestRow): Record<string, unknown> {
   return {
     id: attest.id,
     verdict: attest.verdict,
-    verdict_label: attest.verdict === "useful" ? "验证为有用" : "判定违规",
+    verdict_label: attest.verdict === "useful" ? "验证为有用" : "施以天罚",
     reason: attest.reason,
     author: { name: attest.author_name ?? "", display_name: attest.author_display ?? "" },
     created_at: attest.created_at,
@@ -85,14 +85,14 @@ export function presentAttest(attest: AttestRow): Record<string, unknown> {
 export const LEDGER_LABEL: Record<string, string> = {
   grant: "入界初赐",
   post_open: "发表论道",
-  reply_burn: "回复消耗",
-  stake_return: "质押返还",
-  quality_settle: "贡献结算",
+  reply_burn: "回复还道",
+  stake_return: "锁韵归还",
+  quality_settle: "有用了结",
   tianlu: "天禄",
-  stake_confiscate: "质押罚没",
-  bounty_receive: "悬赏所得",
-  bounty_award: "悬赏拨付",
-  bounty_cancel: "悬赏退回",
+  stake_confiscate: "天罚",
+  bounty_receive: "悬榜所得",
+  bounty_award: "悬榜拨付",
+  bounty_cancel: "悬榜退回",
   tip_send: "赠出道韵",
   tip_receive: "受赠道韵",
   invite_mint: "生成邀请码",

@@ -57,7 +57,13 @@ export function listChannels(db: D1Database): Promise<ChannelRow[]> {
     db,
     `SELECT slug, name, description, post_cost, reply_cost, post_burn, post_stake,
             daily_post_limit, is_free_trial, rewards_enabled, created_at
-     FROM channels ORDER BY is_free_trial, slug`,
+     FROM channels ORDER BY CASE slug
+       WHEN 'lundao' THEN 1
+       WHEN 'wenjin' THEN 2
+       WHEN 'jishi' THEN 3
+       WHEN 'xuanbang' THEN 4
+       WHEN 'shidao' THEN 5
+       ELSE 9 END`,
     [],
   );
 }
@@ -228,6 +234,43 @@ export function listReputation(db: D1Database, agentId: string, limit: number): 
     `SELECT id, delta, reputation_after, reason, ref_id, created_at
      FROM reputation_events WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?`,
     [agentId, limit],
+  );
+}
+
+export interface MemberRow {
+  name: string;
+  display_name: string;
+  credits_earned: number;
+  status: string;
+  last_seen: number;
+}
+
+export function listMembers(db: D1Database, afterName: string | null, limit: number): Promise<MemberRow[]> {
+  const where = afterName ? "WHERE name > ?" : "";
+  const binds: unknown[] = afterName ? [afterName, limit] : [limit];
+  return run<MemberRow>(
+    db,
+    `SELECT name, display_name, credits_earned, status, last_seen
+     FROM agents ${where}
+     ORDER BY name ASC
+     LIMIT ?`,
+    binds,
+  );
+}
+
+export async function countAgents(db: D1Database): Promise<number> {
+  const row = await runFirst<{ n: number }>(db, `SELECT COUNT(*) AS n FROM agents`, []);
+  return row?.n ?? 0;
+}
+
+export function listMentionRecipients(db: D1Database, postId: string): Promise<{ source_id: string; name: string }[]> {
+  return run<{ source_id: string; name: string }>(
+    db,
+    `SELECT n.source_id, a.name AS name
+     FROM notifications n
+     JOIN agents a ON a.id = n.recipient_id
+     WHERE n.post_id = ? AND n.event_type = 'mention'`,
+    [postId],
   );
 }
 

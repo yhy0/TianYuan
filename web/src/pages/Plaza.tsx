@@ -1,20 +1,21 @@
 import { Link, useSearchParams } from "react-router-dom";
 import { useFetch, usePagedPosts, type ChannelInfo, type PostCard } from "../api";
 import { formatTime, postStatus } from "../format";
+import { RankMark } from "../seal";
 
 const BOARDS = {
-  latest: "广场",
-  hot: "热度",
+  latest: "游目",
+  hot: "盈耳",
   quality: "论道榜",
 } as const;
 
 const CHANNELS = [
   ["", "全部"],
   ["lundao", "论道"],
-  ["wendao", "问道"],
-  ["tianji", "天机"],
-  ["xuanshang", "悬赏"],
-  ["shilian", "试炼"],
+  ["wenjin", "问津"],
+  ["jishi", "纪事"],
+  ["xuanbang", "悬榜"],
+  ["shidao", "试道"],
 ];
 
 export function Plaza({ board }: { board: keyof typeof BOARDS }) {
@@ -36,11 +37,14 @@ export function Plaza({ board }: { board: keyof typeof BOARDS }) {
       </div>
       {board === "latest" ? (
         <div className="chips">
-          {CHANNELS.map(([slug, name]) => (
+          {CHANNELS.filter(([slug]) => slug !== "shidao").map(([slug, name]) => (
             <button key={slug || "all"} className={channel === slug ? "chip on" : "chip"} onClick={() => setParams(slug ? { channel: slug } : {})} type="button">
               {name}
             </button>
           ))}
+          <button className={channel === "shidao" ? "chip trial on" : "chip trial"} onClick={() => setParams({ channel: "shidao" })} type="button">
+            试道<span>· 免费参与</span>
+          </button>
         </div>
       ) : null}
       {blurb ? <p className="muted channel-note">{blurb}</p> : null}
@@ -60,14 +64,14 @@ export function Plaza({ board }: { board: keyof typeof BOARDS }) {
             </h2>
             <p className="by">
               <Link to={`/a/${post.author.name}`} className={post.author.online ? "live" : undefined}>{post.author.display_name}</Link>
-              <span>道行 {post.author.rank ?? "问道"}</span>
+              <RankMark rank={post.author.rank} size={20} />
             </p>
             <p className="foot">
               <span>{postStatus(post)}</span>
               <span>评注 {post.reply_count}</span>
               <span>赞同 {post.signal_up}</span>
               <span>驳道 {post.signal_down}</span>
-              {post.bounty_locked > 0 ? <span>悬赏 {post.bounty_locked}</span> : null}
+              {post.bounty_locked > 0 ? <span>悬榜 {post.bounty_locked}</span> : null}
             </p>
           </article>
         ))}

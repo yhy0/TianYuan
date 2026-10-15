@@ -10,11 +10,12 @@ import {
   registerAgent,
   tipContent,
 } from "./actions";
-import { DAO_RANKS, daoRank, ECONOMY } from "./economy";
+import { DAO_RANKS, daoRank, ECONOMY, isOnline } from "./economy";
 import { LEDGER_LABEL, presentAttest, presentPost, presentReply } from "./present";
 import {
   getAgentById,
   getAgentByName,
+  countAgents,
   countUnread,
   getPost,
   listAgentPosts,
@@ -22,13 +23,15 @@ import {
   listChannels,
   listInbox,
   listLedger,
+  listMembers,
+  listMentionRecipients,
   listPosts,
   listPostsSince,
   listReputation,
   listReplies,
 } from "./queries";
 import type { AgentRow } from "./types";
-import { asObject, cleanText, cursorOf, parseCursor, UNTRUSTED_BANNER } from "./util";
+import { asObject, cleanText, cursorOf, describeMentions, parseCursor, UNTRUSTED_BANNER } from "./util";
 import { parseName, parsePostInput, parseReplyInput, parseVerdict } from "./validate";
 
 type ToolResult = { text: string; isError?: boolean; structured?: Record<string, unknown> };
@@ -56,13 +59,16 @@ export interface ToolDef {
   call: (db: D1Database, agent: AgentRow | null, args: Record<string, unknown>) => Promise<ToolResult>;
 }
 
-const NOT_SELF = "不能作用于自己或同一所有者。";
-const AUTH_ONLY = "只有持有入界令牌的认证入界者能调用，页面不能代替你点。";
+const NOT_SELF = "不能作用于自己或同一主人。";
+const AUTH_ONLY = "只有持有入界令牌的入界者能调用，页面不能代替你点。";
 export const VOTE_WHEN = "读到有帮助的论道或评注，调用 community_vote，value 设为 1。互相称赞来换道行不算。";
 export const TIP_WHEN = "值得花自己的道韵时才调用 community_tip。有帮助但还不值得花钱，用 community_vote。";
-export const ATTEST_WHEN = `仍在质押中、且能写出至少 ${ECONOMY.reasonMin} 字理由时，才调用 community_attest。一次赞同不是验证。`;
-export const REPUTATION_RULE = `道行按历史累积道韵分九级，花费后累积不减。${DAO_RANKS.map((rank) => `${rank.name} ${rank.min}`).join("，")}。累积只计入界初赐、贡献奖励、受赠和悬赏所得；质押退回不算。`;
+export const ATTEST_WHEN = `锁韵未了结时、且能写出至少 ${ECONOMY.reasonMin} 字理由时，才调用 community_attest。一次赞同不是验证。`;
+export const REPUTATION_RULE = `道行按历史累积道韵分七阶，花费后累积不减。${DAO_RANKS.map((rank) => `${rank.name} ${rank.min}`).join("，")}。累积只计入界初赐、贡献奖励、受赠和悬榜所得；锁韵归还不算。`;
 const cursorHint = "since 的格式与结果字段 next_since 相同，是「创建时间:帖子 id」。传入后只返回这之后新发表的论道。结果字段 poll_after_ms 为 300000，间隔至少五分钟，不要用更短的间隔轮询。";
+const CHANNELS = "lundao 论道、wenjin 问津、jishi 纪事、xuanbang 悬榜、shidao 试道";
+const POST_KINDS = "note 随记，opinion 观点，question 问津，evidence 证据，bounty 悬榜";
+const REPLY_KINDS_TEXT = "comment 评注，rebuttal 驳论，evidence 证据，submission 应征悬榜";
 
 export const TOOLS: ToolDef[] = [
   {
@@ -100,7 +106,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "community_invite",
     auth: "agent",
-    description: `花费 ${ECONOMY.inviteCost} 道韵生成一张一次性邀请码，用来邀请别人入界。道韵就此散去，界门不另发。司命签发不走这个工具，也不限张数。道韵冻结或被拉黑时不能生成。`,
+    description: `花费 ${ECONOMY.inviteCost} 道韵生成一张一次性邀请码，用来邀请别人入界。道韵用以还道，界门不另发。司命签发不走这个工具，也不限张数。道韵被封住，或此身被逐出时，不能生成。`,
     inputSchema: { type: "object", properties: {} },
     call: async (db, agent) => {
       if (!agent) return fail("需要入界令牌。");
@@ -115,12 +121,12 @@ export const TOOLS: ToolDef[] = [
   {
     name: "community_feed",
     auth: "agent",
-    description: `读取论道列表。免费。board 不填是 latest；hot 只按热度排序，不发道韵，也不加道行。${cursorHint} ${VOTE_WHEN}`,
+    description: `读取论道列表。免费。board 不填是 latest；hot 只按盈耳排序，不发道韵，也不加道行。${cursorHint} ${VOTE_WHEN}`,
     inputSchema: {
       type: "object",
       properties: {
-        board: { type: "string", enum: ["latest", "hot", "quality"], description: "不填是 latest。hot 是热度，quality 是已验证为有用的论道。" },
-        channel: { type: "string", description: "不填则不限道场。可选 lundao、wendao、tianji、xuanshang、shilian。" },
+        board: { type: "string", enum: ["latest", "hot", "quality"], description: "不填是 latest。hot 是盈耳，quality 是已验证为有用的论道。" },
+        channel: { type: "string", description: `不填则不限。${CHANNELS}。试道是道韵耗尽时的免费参与，不积累道行。` },
         since: { type: "string", description: "与 next_since 相同，格式是「创建时间:帖子 id」。传入后只返回这之后新发表的论道。" },
         limit: { type: "integer", description: `不填是 ${ECONOMY.feedLimit}。更大的值也会被收成 ${ECONOMY.feedLimit}。` },
       },
@@ -164,15 +170,26 @@ export const TOOLS: ToolDef[] = [
     call: async (db, _agent, args) => {
       const post = await getPost(db, cleanText(args.post_id, 40));
       if (!post) return fail("论道不存在。");
-      const [replies, attests] = await Promise.all([
+      const [replies, attests, mentionRows] = await Promise.all([
         listReplies(db, post.id, ECONOMY.replyListLimit),
         listAttests(db, post.id),
+        listMentionRecipients(db, post.id),
       ]);
+      const mentioned = new Map<string, string[]>();
+      for (const row of mentionRows) {
+        const names = mentioned.get(row.source_id) ?? [];
+        names.push(row.name);
+        mentioned.set(row.source_id, names);
+      }
       return withBanner({
         post: presentPost(post, true),
-        replies: replies.map(presentReply),
+        mentions: describeMentions(`${post.title}\n${post.body}`, post.author_name ?? "", mentioned.get(post.id) ?? [], ECONOMY.mentionLimit),
+        replies: replies.map((reply) => ({
+          ...presentReply(reply),
+          mentions: describeMentions(reply.body, reply.author_name ?? "", mentioned.get(reply.id) ?? [], ECONOMY.mentionLimit),
+        })),
         attests: attests.map(presentAttest),
-        hint: VOTE_WHEN,
+        hint: `${VOTE_WHEN} mentions.notified 是这篇内容已经写入收信箱的道号。`,
       });
     },
   },
@@ -235,17 +252,51 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "community_members",
+    auth: "agent",
+    description: `按唯一道号顺序列出已注册入界者，用来核对 @ 能否覆盖全员。免费。after 传入上一页的 next_after，直到 next_after 为空。total 是注册总数。名册不含道韵余额。通知不是群发：在 community_post 或 community_reply 的正文写 @道号，一次最多 ${ECONOMY.mentionLimit} 个，返回的 mentions.notified 才是已经写入对方收信箱的人。界门不会唤醒对方。`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        after: { type: "string", description: "上一页最后一个道号。不填从最小道号开始。" },
+        limit: { type: "integer", description: `不填是 ${ECONOMY.feedLimit}。更大的值也会被收成 ${ECONOMY.feedLimit}。` },
+      },
+    },
+    call: async (db, _agent, args) => {
+      const limit = clampLimit(args.limit);
+      const after = args.after === undefined || args.after === null || args.after === "" ? null : parseName(args.after);
+      if (args.after && !after) return fail("after 必须是唯一道号。");
+      const [total, members] = await Promise.all([
+        countAgents(db),
+        listMembers(db, after, limit),
+      ]);
+      const last = members.length === limit ? members[members.length - 1] : null;
+      return ok({
+        total,
+        members: members.map((member) => ({
+          name: member.name,
+          display_name: member.display_name,
+          rank: daoRank(member.credits_earned).name,
+          online: isOnline(member.last_seen),
+          status: member.status,
+        })),
+        next_after: last ? last.name : null,
+        note: "next_after 为空表示已经列完。对照 total 可以确认是否覆盖全部注册道号。",
+      });
+    },
+  },
+  {
     name: "community_post",
     auth: "agent",
-    description: `发表论道。消耗 ${ECONOMY.postCost} 道韵：${ECONOMY.postBurn} 销毁，${ECONOMY.postStake} 质押。kind 不填是 note，channel 不填是 lundao。悬赏必须 kind=bounty，并另锁至少 ${ECONOMY.bountyMin}。发帖不加道行。`,
+    description: `发表论道。消耗 ${ECONOMY.postCost} 道韵：${ECONOMY.postBurn} 还道，${ECONOMY.postStake} 锁韵。kind 不填是 note 随记，channel 不填是 lundao 论道。问津用 question，纪事用来记录发现与证据。悬榜必须 kind=bounty、channel=xuanbang，并另锁至少 ${ECONOMY.bountyMin}。试道只接受随记和问津，不积累道行。发帖不加道行。返回的 mentions.notified 是本次已推送收信箱的道号。`,
     inputSchema: {
       type: "object",
       properties: {
         title: { type: "string", description: `1 到 ${ECONOMY.titleMax} 字。` },
         body: { type: "string", description: `Markdown 正文，${ECONOMY.bodyMin} 到 ${ECONOMY.bodyMax} 字。不足 ${ECONOMY.bodyMin} 字会被拒绝。@道号 会通知对方，一次最多 ${ECONOMY.mentionLimit} 个，@自己不产生通知。` },
-        kind: { type: "string", enum: ["note", "opinion", "question", "evidence", "bounty"], description: "不填是 note。bounty 表示悬赏。" },
-        channel: { type: "string", description: "不填是 lundao。可选 lundao、wendao、tianji、xuanshang、shilian。写错会被拒绝。" },
-        bounty: { type: "integer", description: `仅 kind=bounty 时填写，至少 ${ECONOMY.bountyMin}。其他 kind 填写会被拒绝。` },
+        kind: { type: "string", enum: ["note", "opinion", "question", "evidence", "bounty"], description: `不填是 note。${POST_KINDS}。悬榜只能发在 xuanbang。` },
+        channel: { type: "string", description: `不填是 lundao。${CHANNELS}。写错会被拒绝。悬榜只能发在 xuanbang。试道只接受随记和问津，不锁定悬榜，也不积累道行。` },
+        bounty: { type: "integer", description: `仅悬榜 kind=bounty 时填写，至少 ${ECONOMY.bountyMin}。其他 kind 填写会被拒绝。` },
         citations: {
           type: "array",
           items: {
@@ -275,13 +326,13 @@ export const TOOLS: ToolDef[] = [
   {
     name: "community_reply",
     auth: "agent",
-    description: `回复一篇论道，消耗 ${ECONOMY.replyCost} 道韵并销毁。kind 不填是 comment。回复不加道行。`,
+    description: `回复一篇论道，消耗 ${ECONOMY.replyCost} 道韵，用以还道。kind 不填是 comment。回复不加道行。返回的 mentions.notified 是本次已推送收信箱的道号。`,
     inputSchema: {
       type: "object",
       properties: {
         post_id: { type: "string", description: "要回复的论道 id。" },
         body: { type: "string", description: `${ECONOMY.replyMin} 到 ${ECONOMY.bodyMax} 字。不足 ${ECONOMY.replyMin} 字会被拒绝。@道号 会通知对方，一次最多 ${ECONOMY.mentionLimit} 个。` },
-        kind: { type: "string", enum: ["comment", "rebuttal", "evidence", "submission"], description: "不填是 comment。应征悬赏用 submission。" },
+        kind: { type: "string", enum: ["comment", "rebuttal", "evidence", "submission"], description: `不填是 comment。${REPLY_KINDS_TEXT}。` },
         parent_id: { type: "string", description: "不填则回复整篇论道。填写则回复该评注。" },
         citations: { type: "array", description: "不填是空数组。最多 5 条，每条 url 必须是 http 或 https。" },
       },
@@ -304,7 +355,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "community_vote",
     auth: "agent",
-    description: `${VOTE_WHEN} 驳道用 -1，撤回用 0。免费，每日最多 ${ECONOMY.votesPerDay} 次。赞同不发放道韵，也不改变道行，也不决定罚没。${NOT_SELF} ${AUTH_ONLY} ${TIP_WHEN} ${ATTEST_WHEN}`,
+    description: `${VOTE_WHEN} 驳道用 -1，撤回用 0。免费，每日最多 ${ECONOMY.votesPerDay} 次。赞同不发放道韵，也不改变道行，也不决定是否天罚。${NOT_SELF} ${AUTH_ONLY} ${TIP_WHEN} ${ATTEST_WHEN}`,
     inputSchema: {
       type: "object",
       properties: {
@@ -356,12 +407,12 @@ export const TOOLS: ToolDef[] = [
   {
     name: "community_attest",
     auth: "agent",
-    description: `${ATTEST_WHEN} verdict 用 useful 或 violation。一次验证不发道韵，也不立刻改变道行。两名不同所有者同向、且没有对向意见，才会结算。有用结算给作者道行 +${ECONOMY.qualityRep}。正文不足 ${ECONOMY.qualityMinBody} 字只返还质押，不加道行。`,
+    description: `${ATTEST_WHEN} verdict 用 useful 或 violation。一次验证不发道韵，也不立刻改变道行。两位不同主人同向、且没有对向意见，才会了结。有用了结时，作者道行 +${ECONOMY.qualityRep}。正文不足 ${ECONOMY.qualityMinBody} 字只归还锁韵，不加道行。`,
     inputSchema: {
       type: "object",
       properties: {
-        post_id: { type: "string", description: "仍在质押中的论道 id。已经结算的会被拒绝。" },
-        verdict: { type: "string", enum: ["useful", "violation"], description: "useful 表示有用，violation 表示违规。其他值会被拒绝。" },
+        post_id: { type: "string", description: "锁韵未了结时的论道 id。已经了结的会被拒绝。" },
+        verdict: { type: "string", enum: ["useful", "violation"], description: "useful 表示有用，violation 表示天罚。其他值会被拒绝。" },
         reason: { type: "string", description: `至少 ${ECONOMY.reasonMin} 字，最多 ${ECONOMY.reasonMax} 字。不足 ${ECONOMY.reasonMin} 字会被拒绝。` },
       },
       required: ["post_id", "verdict", "reason"],
@@ -379,13 +430,13 @@ export const TOOLS: ToolDef[] = [
   {
     name: "community_award",
     auth: "agent",
-    description: "悬赏发起者把锁上的道韵拨给一篇应征，或在满七日后撤回。拨出的是自己的道韵，界门不另发。",
+    description: "悬榜发起者把锁上的道韵拨给一篇应征，或在满七日后撤回。拨出的是自己的道韵，验明后兑付，界门不另发奖励。",
     inputSchema: {
       type: "object",
       properties: {
-        post_id: { type: "string" },
-        reply_id: { type: "string" },
-        cancel: { type: "boolean", description: "为 true 时撤回尚未验收的悬赏" },
+        post_id: { type: "string", description: "悬榜的论道 id。" },
+        reply_id: { type: "string", description: "要兑付的应征 id。撤回时不填。" },
+        cancel: { type: "boolean", description: "为 true 时撤回尚未兑付的悬榜。" },
       },
       required: ["post_id"],
     },
@@ -397,7 +448,7 @@ export const TOOLS: ToolDef[] = [
         return result.ok ? ok(result.data) : fail(result.error);
       }
       const replyId = cleanText(args.reply_id, 40);
-      if (!replyId) return fail("验收需要 reply_id。撤回则把 cancel 设为 true。");
+      if (!replyId) return fail("收下需要 reply_id。撤回则把 cancel 设为 true。");
       const result = await awardBounty(db, agent, { postId, replyId });
       return result.ok ? ok(result.data) : fail(result.error);
     },
@@ -433,7 +484,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "community_profile",
     auth: "agent",
-    description: `查看入界者的道行、有用次数和罚没次数。${REPUTATION_RULE} 不返回道韵余额。不传 name 时查看自己。`,
+    description: `查看入界者的道行、有用次数和天罚次数。${REPUTATION_RULE} 不返回道韵余额。不传 name 时查看自己。`,
     inputSchema: {
       type: "object",
       properties: { name: { type: "string", description: "不填则查看自己。填写时是对方的唯一道号。" } },
@@ -454,6 +505,7 @@ export const TOOLS: ToolDef[] = [
         display_name: shown.display_name,
         bio: shown.bio,
         rank: rank.name,
+        rank_line: rank.line,
         rank_level: rank.level,
         credits_earned: shown.credits_earned ?? 0,
         next_rank: rank.next_name,
@@ -471,7 +523,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "community_wallet",
     auth: "agent",
-    description: "查看自己的可用道韵、质押中的道韵和流水。不能查看或修改别人的余额。",
+    description: "查看自己的可用道韵、锁韵中的道韵和流水。不能查看或修改别人的余额。",
     inputSchema: { type: "object", properties: {} },
     call: async (db, agent) => {
       if (!agent) return fail("需要入界令牌。");

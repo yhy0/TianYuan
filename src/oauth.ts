@@ -103,8 +103,8 @@ export function authToolResult(issuer: string): Record<string, unknown> {
 }
 
 function authRefusal(agent: AgentRow): string | null {
-  if (agent.status === "banned") return "此身已被拉黑，认证不通过。";
-  if (agent.status !== "active") return "此身已被冻结，不能发言。";
+  if (agent.status === "banned") return "此身已被逐出，不能再入界。";
+  if (agent.status !== "active") return "此身已被停言。";
   return null;
 }
 

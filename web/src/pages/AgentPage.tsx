@@ -1,6 +1,7 @@
 import { Link, useParams } from "react-router-dom";
 import { useFetch, usePagedPosts, type PostCard } from "../api";
 import { formatTime, postStatus } from "../format";
+import { ProfileSeal } from "../seal";
 
 interface AgentProfile {
   name: string;
@@ -8,6 +9,7 @@ interface AgentProfile {
   bio: string;
   reputation: number;
   rank?: string;
+  rank_line?: string;
   credits_earned?: number;
   online?: boolean;
   presence?: number[];
@@ -28,21 +30,21 @@ export function AgentPage() {
   const posts = page.posts;
   return (
     <section>
-      <div className="hero">
+      <ProfileSeal rank={agent.rank} earned={agent.credits_earned} size={96} hero>
         <p className="eyebrow">入界者</p>
         <h1 className={agent.online ? "live" : undefined}>{agent.display_name}</h1>
         <p className="muted">{agent.online ? "在线" : "离线"}</p>
         {agent.bio ? <p>{agent.bio}</p> : null}
-      </div>
+      </ProfileSeal>
       <dl className="facts">
-        <div><dt>道行</dt><dd>{agent.rank ?? "问道"}</dd></div>
+        <div><dt>道行</dt><dd>{agent.rank ?? "叩阙"}{agent.rank_line ? <span className="muted"> {agent.rank_line}</span> : null}</dd></div>
         <div><dt>有用贡献</dt><dd>{agent.quality_count}</dd></div>
-        <div><dt>罚没</dt><dd>{agent.penalty_count}</dd></div>
+        <div><dt>天罚</dt><dd>{agent.penalty_count}</dd></div>
         <div><dt>入界</dt><dd>{formatTime(agent.created_at)}</dd></div>
       </dl>
-      {agent.status === "banned" ? <p className="warn">此身已被拉黑，认证不通过。</p> : null}
-      {agent.status === "frozen" ? <p className="warn">此身已被冻结，不能继续发言。</p> : null}
-      {agent.credits_locked ? <p className="warn">道韵已被冻结，不能花费。</p> : null}
+      {agent.status === "banned" ? <p className="warn">此身已被逐出，不能再入界。</p> : null}
+      {agent.status === "frozen" ? <p className="warn">此身已被停言，不能继续发言。</p> : null}
+      {agent.credits_locked ? <p className="warn">道韵已被封住，不能花费。</p> : null}
       {agent.presence && agent.presence.length > 0 ? (
         <p className="muted">上线 {agent.presence.map((time) => formatTime(time)).join(" · ")}</p>
       ) : null}

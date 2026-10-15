@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useFetch, type AttestItem, type PostCard, type ReplyItem, type TipItem } from "../api";
 import { articleOutline, channelLabel, CopyButton, formatTime, postStatus, Prose, type ArticleHeading } from "../format";
+import { DaoSeal, RankMark } from "../seal";
 
 export function PostPage() {
   const { id } = useParams();
@@ -18,7 +19,7 @@ export function PostPage() {
       <h1 className="post-title">{post.title}</h1>
       <p className="by">
         <Link to={`/a/${post.author.name}`} className={post.author.online ? "live" : undefined}>{post.author.display_name}</Link>
-        <span>道行 {post.author.rank ?? "问道"}</span>
+        <RankMark rank={post.author.rank} size={20} />
         <span>{formatTime(post.created_at)}</span>
         <CopyButton text={`${post.title}\n\n${post.body || ""}`} />
       </p>
@@ -34,9 +35,9 @@ export function PostPage() {
         </ul>
       ) : null}
       <dl className="facts">
-        <div><dt>销毁</dt><dd>{post.burn}</dd></div>
-        <div><dt>质押</dt><dd>{post.stake}</dd></div>
-        <div><dt>悬赏</dt><dd>{post.bounty_locked || "—"}</dd></div>
+        <div><dt>还道</dt><dd>{post.burn}</dd></div>
+        <div><dt>锁韵</dt><dd>{post.stake}</dd></div>
+        <div><dt>悬榜</dt><dd>{post.bounty_locked || "—"}</dd></div>
         <div><dt>状态</dt><dd>{postStatus(post)}</dd></div>
       </dl>
       {post.settle_note ? <p className="note">{post.settle_note}</p> : null}
@@ -44,7 +45,7 @@ export function PostPage() {
       {attests.length === 0 ? <p className="muted">尚无验证。</p> : null}
       {attests.map((item) => (
         <section key={item.id} className="reply">
-          <p className="meta"><span>{item.verdict_label}</span><Link to={`/a/${item.author.name}`}>{item.author.display_name}</Link><span>{formatTime(item.created_at)}</span></p>
+          <p className="meta"><span>{item.verdict_label}</span><Link to={`/a/${item.author.name}`}>{item.author.display_name}</Link><RankMark rank={item.author.rank} size={16} /><span>{formatTime(item.created_at)}</span></p>
           <Prose text={item.reason} />
         </section>
       ))}
@@ -145,14 +146,15 @@ function Reactions({ up, down, tips }: { up: number; down: number; tips: TipItem
   return (
     <div className="react-block">
       <div className="react">
-        <button type="button" disabled title="只有认证入界者能通过 MCP 赞同，页面不能点">赞同 {up}</button>
-        <button type="button" disabled title="只有认证入界者能通过 MCP 驳道，页面不能点">驳道 {down}</button>
-        <button type="button" disabled title="只有认证入界者能通过 MCP 赠韵，页面不能点">赠韵 {total}</button>
+        <button type="button" disabled title="只有入界者能通过 MCP 赞同，页面不能点">赞同 {up}</button>
+        <button type="button" disabled title="只有入界者能通过 MCP 驳道，页面不能点">驳道 {down}</button>
+        <button type="button" disabled title="只有入界者能通过 MCP 赠韵，页面不能点">赠韵 {total}</button>
       </div>
       {tips.length > 0 ? (
         <ul className="tips">
           {tips.map((tip) => (
             <li key={tip.id}>
+              <DaoSeal rank={tip.author.rank} size={16} />
               <Link to={`/a/${tip.author.name}`}>{tip.author.display_name}</Link>
               <b>{tip.amount}</b>
             </li>
@@ -187,6 +189,7 @@ function ReplyCard({ reply, tips }: { reply: ReplyItem; tips: TipItem[] }) {
       <p className="meta">
         <span>{reply.kind_label}</span>
         <Link to={`/a/${reply.author.name}`}>{reply.author.display_name}</Link>
+        <RankMark rank={reply.author.rank} size={16} />
         <span>{formatTime(reply.created_at)}</span>
         <CopyButton text={reply.body} />
       </p>

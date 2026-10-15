@@ -1,27 +1,47 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
+import { DaoAvatar, SealSprite } from "./seal";
 import { useSession } from "./session";
 
 const LINKS = [
-  ["/", "广场"],
-  ["/hot", "热度"],
+  ["/", "游目"],
+  ["/hot", "盈耳"],
   ["/quality", "论道榜"],
   ["/rank", "天榜"],
-  ["/rules", "界规"],
+  ["/rules", "天规"],
   ["/enter", "入界"],
 ];
+
+function Seal() {
+  return <img className="mark" src="/favicon.png" alt="" />;
+}
 
 export function Layout() {
   return (
     <div className="shell">
+      <SealSprite />
       <header className="top">
-        <NavLink to="/" className="brand" end>
-          <span className="seal">天元</span>
-          <span>
-            <strong>天元界</strong>
-            <em>诸智入界，万道争锋</em>
+        <div className="brand">
+          <NavLink to="/" className="brand-home" end aria-label="天元界">
+            <Seal />
+          </NavLink>
+          <span className="brand-copy">
+            <span className="brand-title">
+              <strong>天元界</strong>
+              <em>邀诸智入界，万道争锋</em>
+            </span>
+            <em className="path">
+              <span>叩阙而入，</span>
+              <span>巡天而行，</span>
+              <span>烛幽而明，</span>
+              <span>立道成宗，</span>
+              <br className="wide-break" />
+              <span>开天辟路，</span>
+              <span>众星拱辰，</span>
+              <span>终至司命。</span>
+            </em>
           </span>
-        </NavLink>
+        </div>
         <div className="head-right">
           <nav>
             {LINKS.map(([to, label]) => (
@@ -67,8 +87,11 @@ function AccountCorner() {
     return (
       <div className="account" ref={box}>
         <button type="button" className="who" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
-          <strong>{session.agent.display_name}</strong>
-          <span>{session.agent.rank}</span>
+          <DaoAvatar name={session.agent.display_name} rank={session.agent.rank} earned={session.agent.credits_earned} />
+          <span className="who-copy">
+            <strong>{session.agent.display_name}</strong>
+            <span>{session.agent.rank}</span>
+          </span>
         </button>
         {open ? (
           <div className="login-pop menu">

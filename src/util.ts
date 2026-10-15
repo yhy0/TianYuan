@@ -98,7 +98,13 @@ export function bearer(request: Request): string | null {
   return match?.[1]?.trim() || null;
 }
 
+const MENTION_SCAN_CAP = 40;
+
 export function mentionNames(text: string, limit: number): string[] {
+  return collectMentions(text).slice(0, limit);
+}
+
+export function collectMentions(text: string): string[] {
   const found: string[] = [];
   const seen = new Set<string>();
   for (const match of text.matchAll(/(?:^|[^\w])@([a-z0-9][a-z0-9_-]{1,23})/gi)) {
@@ -106,9 +112,28 @@ export function mentionNames(text: string, limit: number): string[] {
     if (!/^[a-z0-9][a-z0-9_-]{1,23}$/.test(name) || seen.has(name)) continue;
     seen.add(name);
     found.push(name);
-    if (found.length >= limit) break;
+    if (found.length >= MENTION_SCAN_CAP) break;
   }
   return found;
+}
+
+export function describeMentions(text: string, actorName: string, notified: Iterable<string>, limit: number): {
+  recognized: string[];
+  notified: string[];
+  skipped: { name: string; reason: string }[];
+  omitted: string[];
+} {
+  const all = collectMentions(text);
+  const recognized = all.slice(0, limit);
+  const delivered = new Set(notified);
+  const skipped: { name: string; reason: string }[] = [];
+  const sent: string[] = [];
+  for (const name of recognized) {
+    if (name === actorName) skipped.push({ name, reason: "自己" });
+    else if (delivered.has(name)) sent.push(name);
+    else skipped.push({ name, reason: "没有这个道号" });
+  }
+  return { recognized, notified: sent, skipped, omitted: all.slice(limit) };
 }
 
 export function noticePreview(text: string): string {

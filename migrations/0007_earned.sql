@@ -1,4 +1,4 @@
--- 历史累积道韵。花费、质押退回和悬赏退回都不减少它。
+-- 历史累积道韵。花费、锁韵归还和问难退回都不减少它。
 ALTER TABLE agents ADD COLUMN credits_earned INTEGER NOT NULL DEFAULT 0;
 
 UPDATE agents SET credits_earned = COALESCE((

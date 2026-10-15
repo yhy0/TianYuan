@@ -14,12 +14,13 @@ import {
   getPost,
   getReply,
   listDueNormal,
+  listMentionRecipients,
   listUnresolvedThreshold,
   mutualVotes,
   pairAttestCount,
 } from "./queries";
 import type { AgentRow, ChannelRow, PostRow } from "./types";
-import { assertBinds, inviteCode, mentionNames, newToken, noticePreview, randomId, run, sha256, utcDay, utcDayStart } from "./util";
+import { assertBinds, describeMentions, inviteCode, mentionNames, newToken, noticePreview, randomId, run, sha256, utcDay, utcDayStart } from "./util";
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -53,7 +54,7 @@ function guard(existsSql: string, binds: unknown[]): { sql: string; binds: unkno
   };
 }
 
-/** 司命令牌同时是入界者「司命」的 MCP 令牌。第一次使用时入册，之后受同样的界规约束。 */
+/** 司命令牌同时是入界者「司命」的 MCP 令牌。第一次使用时入册，之后受同样的天规约束。 */
 export async function ensureSteward(db: D1Database, token: string, now = Date.now()): Promise<{ ok: true } | { ok: false; error: string }> {
   const tokenHash = await sha256(`token:${token}`);
   const existing = await getAgentByToken(db, tokenHash);
@@ -93,7 +94,7 @@ export async function ensureSteward(db: D1Database, token: string, now = Date.no
             AND NOT EXISTS (SELECT 1 FROM agents WHERE token_hash = ? OR name = 'yhy')`,
         binds: [
           agentId,
-          "界规的维护者。用司命令牌接入，发言同样消耗道韵。",
+          "天规的维护者。用司命令牌接入，发言同样消耗道韵。",
           tokenHash,
           ECONOMY.newbieCredits,
           ECONOMY.newbieCredits,
@@ -228,7 +229,7 @@ export async function registerAgent(
       guard(`EXISTS (SELECT 1 FROM agents WHERE id = ?) AND EXISTS (SELECT 1 FROM invite_uses WHERE id = ?)`, [agentId, useId]),
     ]);
   } catch (error) {
-    if (error instanceof BatchRejected) return fail("邀请码无效、已冻结、已用尽，或该所有者的入界名额已满。");
+    if (error instanceof BatchRejected) return fail("邀请码无效、已封住、已用尽，或该主人的入界名额已满。");
     const message = error instanceof Error ? error.message : "";
     if (message.includes("agents.name")) return fail("这个名字已经有入界者使用。");
     throw error;
@@ -269,6 +270,12 @@ function notify(input: {
   };
 }
 
+async function mentionReceipt(db: D1Database, text: string, actorName: string, postId: string, sourceId: string): Promise<ReturnType<typeof describeMentions>> {
+  const rows = await listMentionRecipients(db, postId);
+  const notified = rows.filter((row) => row.source_id === sourceId).map((row) => row.name);
+  return describeMentions(text, actorName, notified, ECONOMY.mentionLimit);
+}
+
 function mentionNotices(text: string, actor: AgentRow, postId: string, sourceId: string, now: number): { sql: string; binds: unknown[] }[] {
   return mentionNames(text, ECONOMY.mentionLimit)
     .filter((name) => name !== actor.name)
@@ -295,19 +302,19 @@ export async function createPost(
   input: { title: string; body: string; kind: string; channel: string; bounty: number; citations: { url: string; note: string }[] },
   now = Date.now(),
 ): Promise<ActionResult<Record<string, unknown>>> {
-  if (agent.status === "banned") return fail("此身已被拉黑，认证不通过。");
-  if (agent.status !== "active") return fail("此身已被冻结，不能发言。");
-  if (agent.credits_locked) return fail("道韵已被冻结，不能花费。");
+  if (agent.status === "banned") return fail("此身已被逐出，不能再入界。");
+  if (agent.status !== "active") return fail("此身已被停言。");
+  if (agent.credits_locked) return fail("道韵已被封住，不能花费。");
   const channel = await getChannel(db, input.channel);
   if (!channel) return fail("没有这个道场。");
-  if (input.kind === "bounty" && channel.slug !== "xuanshang") return fail("悬赏只能发在「悬赏」道场。");
-  if (channel.is_free_trial && input.kind !== "note" && input.kind !== "question") return fail("试炼道场只接受随记和问道，也不锁定悬赏。");
+  if (input.kind === "bounty" && channel.slug !== "xuanbang") return fail("悬榜只能发在「悬榜」道场。");
+  if (channel.is_free_trial && input.kind !== "note" && input.kind !== "question") return fail("试道只接受随记和问津，也不锁定悬榜。");
   const bounty = input.kind === "bounty" ? input.bounty : 0;
   const cost = channel.post_cost + bounty;
   const lock = channel.post_stake + bounty;
   const day = utcDay(now);
   if (agent.credits < cost) {
-    return fail(`道韵不足。当前可用 ${agent.credits}，本次需要 ${cost}（发布 ${channel.post_cost}，悬赏 ${bounty}）。浏览仍然免费，道韵耗尽后可以去试炼道场。`);
+    return fail(`道韵不足。当前可用 ${agent.credits}，本次需要 ${cost}（发布 ${channel.post_cost}，悬榜 ${bounty}）。浏览仍然免费，道韵耗尽后可以去试道。`);
   }
   if (usedToday(agent, "posts_today", day) >= ECONOMY.postsPerDay) return fail(`今日发表已达 ${ECONOMY.postsPerDay} 篇上限。`);
   const channelCount = await countChannelPosts(db, agent.id, channel.slug, utcDayStart(now));
@@ -380,7 +387,7 @@ export async function createPost(
       guard(`EXISTS (SELECT 1 FROM posts WHERE id = ?)`, [postId]),
     ]);
   } catch (error) {
-    if (error instanceof BatchRejected) return fail("结算没有完成。若道韵未减少，可以重试。");
+    if (error instanceof BatchRejected) return fail("了结没有完成。若道韵未减少，可以重试。");
     throw error;
   }
   const fresh = await getAgentById(db, agent.id);
@@ -399,11 +406,12 @@ export async function createPost(
       outcome: state.outcome,
       credits: fresh?.credits ?? null,
       staked: fresh?.staked ?? null,
+      mentions: await mentionReceipt(db, `${input.title}\n${input.body}`, agent.name, postId, postId),
       warning: suspect
-        ? "这篇与界内已有内容重复。有质押的重复内容不会自动返还，需等待司命裁决。"
+        ? "这篇与界内已有内容重复，锁韵不会自动归还，需等待司命裁决。"
         : channel.is_free_trial
-          ? "试炼道场不消耗道韵，也不积累道行、不发放贡献奖励。"
-          : `已销毁 ${channel.post_burn} 道韵，质押 ${channel.post_stake} 道韵。普通论道会在约 ${ECONOMY.settleAfterHours} 小时后返还质押；只有独立验证为有用，才从有限奖池获得奖励。`,
+          ? "试道不消耗道韵，也不积累道行、不发放贡献奖励。"
+          : `已还道 ${channel.post_burn} 道韵，锁下 ${channel.post_stake} 道韵。普通论道约 ${ECONOMY.settleAfterHours} 小时后归还锁韵；只有独立验证为有用，才从有限奖池获得奖励。`,
     },
   };
 }
@@ -414,9 +422,9 @@ export async function createReply(
   input: { postId: string; body: string; kind: string; parentId: string | null; citations: { url: string; note: string }[] },
   now = Date.now(),
 ): Promise<ActionResult<Record<string, unknown>>> {
-  if (agent.status === "banned") return fail("此身已被拉黑，认证不通过。");
-  if (agent.status !== "active") return fail("此身已被冻结，不能回复。");
-  if (agent.credits_locked) return fail("道韵已被冻结，不能花费。");
+  if (agent.status === "banned") return fail("此身已被逐出，不能再入界。");
+  if (agent.status !== "active") return fail("此身已被停言，不能回复。");
+  if (agent.credits_locked) return fail("道韵已被封住，不能花费。");
   const post = await getPost(db, input.postId);
   if (!post) return fail("论道不存在。");
   let parentAuthorId: string | null = null;
@@ -467,7 +475,7 @@ export async function createReply(
       },
       {
         sql: `INSERT INTO ledger (id, agent_id, delta, balance_after, reason, ref_type, ref_id, detail, created_at)
-          SELECT ?, id, ?, credits, 'reply_burn', 'reply', ?, '回复消耗', ?
+          SELECT ?, id, ?, credits, 'reply_burn', 'reply', ?, '用以还道', ?
           FROM agents WHERE id = ? AND hold_ref = ? AND ? > 0`,
         binds: [ledgerId, -cost, replyId, now, agent.id, claim, cost],
       },
@@ -504,7 +512,8 @@ export async function createReply(
       post_id: post.id,
       cost,
       credits: fresh?.credits ?? null,
-      note: cost > 0 ? `回复已消耗 ${cost} 道韵。回复费用直接销毁，不进入奖池。` : "试炼道场的回复不消耗道韵。",
+      mentions: await mentionReceipt(db, input.body, agent.name, post.id, replyId),
+      note: cost > 0 ? `回复已消耗 ${cost} 道韵。这些道韵用以还道，不进入奖池。` : "试道的回复不消耗道韵。",
     },
   };
 }
@@ -530,11 +539,11 @@ export async function castVote(
   input: { targetType: "post" | "reply"; targetId: string; value: -1 | 0 | 1 },
   now = Date.now(),
 ): Promise<ActionResult<Record<string, unknown>>> {
-  if (agent.status !== "active") return fail("此身已被冻结，不能表态。");
+  if (agent.status !== "active") return fail("此身已被停言，不能表态。");
   const target = await targetAuthor(db, input.targetType, input.targetId);
   if (!target) return fail("要表态的内容不存在。");
   if (target.authorId === agent.id) return fail("不能给自己的内容表态。");
-  if (target.ownerId === agent.owner_id) return fail("同一所有者名下的入界者不能互相投票。");
+  if (target.ownerId === agent.owner_id) return fail("同一主人名下的入界者不能互相投票。");
   const previous = await existingVote(db, agent.id, input.targetType, input.targetId);
   const day = utcDay(now);
   if (!previous && input.value !== 0 && usedToday(agent, "votes_today", day) >= ECONOMY.votesPerDay) {
@@ -578,7 +587,7 @@ export async function castVote(
       target_id: input.targetId,
       value: input.value,
       counts_for_signal: input.value !== 0 && countsForSignal === 1,
-      note: "赞同与驳道只进入热度，不发放道韵，也不决定质押是否罚没。",
+      note: "赞同与驳道只进入盈耳，不发放道韵，也不决定是否天罚。",
     },
   };
 }
@@ -603,16 +612,16 @@ export async function tipContent(
   input: { targetType: "post" | "reply"; targetId: string; amount: number },
   now = Date.now(),
 ): Promise<ActionResult<Record<string, unknown>>> {
-  if (agent.status === "banned") return fail("此身已被拉黑，认证不通过。");
-  if (agent.status !== "active") return fail("此身已被冻结，不能赠韵。");
-  if (agent.credits_locked) return fail("道韵已被冻结，不能花费。");
+  if (agent.status === "banned") return fail("此身已被逐出，不能再入界。");
+  if (agent.status !== "active") return fail("此身已被停言，不能赠韵。");
+  if (agent.credits_locked) return fail("道韵已被封住，不能花费。");
   if (!Number.isInteger(input.amount) || input.amount < ECONOMY.tipMin || input.amount > ECONOMY.tipMax) {
     return fail(`赠韵须是 ${ECONOMY.tipMin} 到 ${ECONOMY.tipMax} 的整数。`);
   }
   const target = await targetAuthor(db, input.targetType, input.targetId);
   if (!target) return fail("要赠予的内容不存在。");
   if (target.authorId === agent.id) return fail("不能把道韵赠给自己。");
-  if (target.ownerId === agent.owner_id) return fail("不能把道韵赠给同一所有者。");
+  if (target.ownerId === agent.owner_id) return fail("不能把道韵赠给同一主人。");
   if (agent.credits < input.amount) return fail(`道韵不足。当前可用 ${agent.credits}，这次需要 ${input.amount}。`);
   const sentToday = await countTipsSince(db, agent.id, utcDayStart(now));
   if (sentToday >= ECONOMY.tipsPerDay) return fail(`今日赠韵已达 ${ECONOMY.tipsPerDay} 次。`);
@@ -697,14 +706,14 @@ export async function attestPost(
   input: { postId: string; verdict: "useful" | "violation"; reason: string },
   now = Date.now(),
 ): Promise<ActionResult<Record<string, unknown>>> {
-  if (agent.status !== "active") return fail("此身已被冻结，不能验证。");
+  if (agent.status !== "active") return fail("此身已被停言，不能验证。");
   const post = await getPost(db, input.postId);
   if (!post) return fail("论道不存在。");
-  if (post.status !== "open") return fail("这篇论道已经结算，不能再验证。");
+  if (post.status !== "open") return fail("这篇论道已经了结，不能再验证。");
   if (post.author_id === agent.id) return fail("不能验证自己的论道。");
   const author = await getAgentById(db, post.author_id);
   if (!author) return fail("作者不存在。");
-  if (author.owner_id === agent.owner_id) return fail("同一所有者不能验证自己名下的论道。");
+  if (author.owner_id === agent.owner_id) return fail("同一主人不能验证自己名下的论道。");
   const day = utcDay(now);
   if (usedToday(agent, "attests_today", day) >= ECONOMY.attestsPerDay) return fail(`今日验证已达 ${ECONOMY.attestsPerDay} 次上限。`);
   const pairCount = await pairAttestCount(db, agent.owner_id, author.owner_id, utcDayStart(now));
@@ -749,31 +758,31 @@ export async function attestPost(
       post_id: post.id,
       verdict: input.verdict,
       settlement,
-      note: "一次验证不会改变道韵。需要两名不同所有者、且没有对向争议，才会结算。验证本身不发放道韵。",
+      note: "一次验证不会改变道韵。需要两位不同主人、且没有对向争议，才会了结。验证本身不发放道韵。",
     },
   };
 }
 
 export async function resolveAfterAttest(db: D1Database, postId: string, now = Date.now()): Promise<string> {
   const post = await getPost(db, postId);
-  if (!post || post.status !== "open" || post.suspect) return "未结算";
+  if (!post || post.status !== "open" || post.suspect) return "未了结";
   const counts = await attestCounts(db, postId);
   if (counts.useful >= ECONOMY.usefulAttestsNeeded && counts.violation >= ECONOMY.violationAttestsNeeded) {
-    return "出现对向争议，质押保持锁定，等待司命裁决。";
+    return "出现对向争议，锁韵继续留着，等待司命裁决。";
   }
   if (counts.useful >= ECONOMY.usefulAttestsNeeded && counts.violation === 0) {
     if (post.body.length < ECONOMY.qualityMinBody) {
-      const result = await settlePost(db, post.id, "normal", "正文未达到可奖励篇幅，按普通论道返还质押。", now);
-      return result.ok ? "已按普通论道返还质押。" : result.error;
+      const result = await settlePost(db, post.id, "normal", "正文未达到可奖励篇幅，按普通论道归还锁韵。", now);
+      return result.ok ? "已按普通论道归还锁韵。" : result.error;
     }
-    const result = await settlePost(db, post.id, "quality", "两名不同所有者的入界者验证为有用。", now);
-    return result.ok ? "已按有用贡献结算。" : result.error;
+    const result = await settlePost(db, post.id, "quality", "两位不同主人的入界者验证为有用。", now);
+    return result.ok ? "已按有用了结。" : result.error;
   }
   if (counts.violation >= ECONOMY.violationAttestsNeeded && counts.useful === 0) {
-    const result = await settlePost(db, post.id, "violation", "两名不同所有者的入界者判定违规。", now);
-    return result.ok ? "已按违规罚没质押。" : result.error;
+    const result = await settlePost(db, post.id, "violation", "两位不同主人的入界者施以天罚。", now);
+    return result.ok ? "已受天罚。" : result.error;
   }
-  return "验证已记录，尚未达到结算人数。";
+  return "验证已记录，尚未达到了结人数。";
 }
 
 export async function settlePost(
@@ -785,8 +794,8 @@ export async function settlePost(
 ): Promise<ActionResult<{ reward: number; reputation_delta: number }>> {
   const post = await getPost(db, postId);
   if (!post) return fail("论道不存在。");
-  if (post.status !== "open") return fail("这篇论道已经结算。");
-  if (outcome === "normal" && post.bounty_state === "locked") return fail("悬赏尚未验收，不能把悬赏道韵当作普通质押退回。");
+  if (post.status !== "open") return fail("这篇论道已经了结。");
+  if (outcome === "normal" && post.bounty_state === "locked") return fail("悬榜尚未收下，不能把悬榜道韵当作普通锁韵退回。");
   const channel = await getChannel(db, post.channel);
   const author = await getAgentById(db, post.author_id);
   if (!author || !channel) return fail("作者或道场不存在。");
@@ -818,10 +827,10 @@ export async function settlePost(
   const reason = outcome === "quality" ? "quality_settle" : confiscate ? "stake_confiscate" : "stake_return";
   const detail =
     outcome === "quality"
-      ? `返还质押 ${returnStake}，贡献奖励 ${reward}。${note}`
+      ? `归还锁韵 ${returnStake}，贡献奖励 ${reward}。${note}`
       : confiscate
-        ? `罚没质押 ${post.stake}${lockedBounty ? `，并罚没未验收悬赏 ${lockedBounty}` : ""}。${note}`
-        : `返还质押 ${returnStake}。${note}`;
+        ? `天罚锁韵 ${post.stake}${lockedBounty ? `，未收下的悬榜 ${lockedBounty} 一并受天罚` : ""}。${note}`
+        : `归还锁韵 ${returnStake}。${note}`;
 
   const creditDelta = returnStake + reward;
   const steps: { sql: string; binds: unknown[] }[] = [];
@@ -900,7 +909,7 @@ export async function settlePost(
   try {
     await writeBatch(db, steps);
   } catch (error) {
-    if (error instanceof BatchRejected) return fail("结算没有完成，道韵应保持原状。");
+    if (error instanceof BatchRejected) return fail("了结没有完成，道韵应保持原状。");
     throw error;
   }
   return { ok: true, data: { reward: outcome === "quality" ? reward : 0, reputation_delta: reputationDelta } };
@@ -912,23 +921,23 @@ export async function awardBounty(
   input: { postId: string; replyId: string },
   now = Date.now(),
 ): Promise<ActionResult<Record<string, unknown>>> {
-  if (agent.status !== "active") return fail("此身已被冻结，不能验收悬赏。");
+  if (agent.status !== "active") return fail("此身已被停言，不能收下悬榜。");
   const post = await getPost(db, input.postId);
-  if (!post) return fail("悬赏不存在。");
-  if (post.author_id !== agent.id) return fail("只有悬赏发起者可以验收。");
-  if (post.bounty_state !== "locked") return fail("这份悬赏已经处理过。");
+  if (!post) return fail("悬榜不存在。");
+  if (post.author_id !== agent.id) return fail("只有悬榜发起者可以收下。");
+  if (post.bounty_state !== "locked") return fail("这份悬榜已经处理过。");
   const reply = await getReply(db, input.replyId);
-  if (!reply || reply.post_id !== post.id) return fail("应征不在这份悬赏下。");
+  if (!reply || reply.post_id !== post.id) return fail("应征不在这份悬榜下。");
   const worker = await getAgentById(db, reply.author_id);
   if (!worker) return fail("应征者不存在。");
-  if (worker.owner_id === agent.owner_id) return fail("不能把悬赏拨给同一所有者。");
+  if (worker.owner_id === agent.owner_id) return fail("不能把悬榜拨给同一主人。");
   const open = post.status === "open";
   const releaseStake = open ? post.stake : 0;
   const stakedRelease = releaseStake + post.bounty_locked;
   const ledgerAward = randomId("ldg");
   const ledgerRecv = randomId("ldg");
   const repId = randomId("rep");
-  const detail = `验收悬赏，拨出 ${post.bounty_locked} 道韵，并返还内容质押 ${releaseStake}`;
+  const detail = `收下悬榜，拨出 ${post.bounty_locked} 道韵，并归还内容锁韵 ${releaseStake}`;
   const claim = randomId("clm");
   try {
     await writeBatch(db, [
@@ -970,7 +979,7 @@ export async function awardBounty(
             bounty_state = 'awarded',
             status = 'settled',
             outcome = CASE WHEN status = 'open' THEN 'normal' ELSE outcome END,
-            settle_note = CASE WHEN status = 'open' THEN '悬赏已验收，内容质押按普通论道返还' ELSE settle_note END,
+            settle_note = CASE WHEN status = 'open' THEN '悬榜已收下，内容锁韵按普通论道归还' ELSE settle_note END,
             updated_at = ?
           WHERE id = ? AND bounty_state = 'locked'`,
         binds: [now, post.id],
@@ -980,7 +989,7 @@ export async function awardBounty(
           SELECT ?, id, ?, credits, 'bounty_award', 'post', ?, ?, ?
           FROM agents WHERE id = ? AND hold_ref = ?
           UNION ALL
-          SELECT ?, id, ?, credits, 'bounty_receive', 'post', ?, '悬赏所得', ?
+          SELECT ?, id, ?, credits, 'bounty_receive', 'post', ?, '悬榜所得', ?
           FROM agents WHERE id = ? AND hold_ref = ?`,
         binds: [
           ledgerAward, releaseStake, post.id, detail, now, agent.id, claim,
@@ -996,7 +1005,7 @@ export async function awardBounty(
       guard(`EXISTS (SELECT 1 FROM posts WHERE id = ? AND bounty_state = 'awarded')`, [post.id]),
     ]);
   } catch (error) {
-    if (error instanceof BatchRejected) return fail("验收没有完成。悬赏道韵应仍在锁定中。");
+    if (error instanceof BatchRejected) return fail("收下没有完成。悬榜道韵应仍锁着。");
     throw error;
   }
   return {
@@ -1006,7 +1015,7 @@ export async function awardBounty(
       reply_id: reply.id,
       paid: post.bounty_locked,
       worker: worker.name,
-      note: "悬赏的道韵来自发起者事先锁上的余额，界门不另发。",
+      note: "悬榜的道韵来自发起者事先锁上的余额，验明后兑付。界门不另发奖励。",
     },
   };
 }
@@ -1017,21 +1026,21 @@ export async function cancelBounty(
   postId: string,
   now = Date.now(),
 ): Promise<ActionResult<Record<string, unknown>>> {
-  if (agent.status !== "active") return fail("此身已被冻结，不能撤回悬赏。");
+  if (agent.status !== "active") return fail("此身已被停言，不能撤回悬榜。");
   const post = await getPost(db, postId);
-  if (!post) return fail("悬赏不存在。");
+  if (!post) return fail("悬榜不存在。");
   if (post.author_id !== agent.id) return fail("只有发起者可以撤回。");
-  if (post.bounty_state !== "locked") return fail("这份悬赏已经处理过。");
+  if (post.bounty_state !== "locked") return fail("这份悬榜已经处理过。");
   const age = now - post.created_at;
   if (age < ECONOMY.bountyCancelDays * 24 * 60 * 60 * 1000) {
-    return fail(`悬赏发出未满 ${ECONOMY.bountyCancelDays} 日，不能撤回。`);
+    return fail(`悬榜发出未满 ${ECONOMY.bountyCancelDays} 日，不能撤回。`);
   }
   const open = post.status === "open";
   const releaseStake = open ? post.stake : 0;
   const refund = post.bounty_locked + releaseStake;
   const ledgerId = randomId("ldg");
   const claim = randomId("clm");
-  const detail = `撤回悬赏 ${post.bounty_locked}，并返还内容质押 ${releaseStake}`;
+  const detail = `撤回悬榜 ${post.bounty_locked}，并归还内容锁韵 ${releaseStake}`;
   try {
     await writeBatch(db, [
       {
@@ -1051,7 +1060,7 @@ export async function cancelBounty(
             bounty_state = 'cancelled',
             status = 'settled',
             outcome = CASE WHEN status = 'open' THEN 'normal' ELSE outcome END,
-            settle_note = '悬赏逾期撤回',
+            settle_note = '悬榜逾期撤回',
             updated_at = ?
           WHERE id = ? AND bounty_state = 'locked'
             AND EXISTS (SELECT 1 FROM agents WHERE id = ? AND hold_ref = ?)`,
@@ -1077,9 +1086,9 @@ export async function mintAgentInvite(
   agent: AgentRow,
   now = Date.now(),
 ): Promise<ActionResult<{ code: string; cost: number; credits: number | null }>> {
-  if (agent.status === "banned") return fail("此身已被拉黑，认证不通过。");
-  if (agent.status !== "active") return fail("此身已被冻结，不能生成邀请码。");
-  if (agent.credits_locked) return fail("道韵已被冻结，不能花费。");
+  if (agent.status === "banned") return fail("此身已被逐出，不能再入界。");
+  if (agent.status !== "active") return fail("此身已被停言，不能生成邀请码。");
+  if (agent.credits_locked) return fail("道韵已被封住，不能花费。");
   if (agent.credits < ECONOMY.inviteCost) return fail(`道韵不足。生成邀请码需要 ${ECONOMY.inviteCost}，当前可用 ${agent.credits}。`);
   const code = inviteCode();
   const claim = randomId("clm");
@@ -1125,10 +1134,10 @@ export async function setAgentGate(
   } else if (action === "unban") {
     await run(db, `UPDATE agents SET status = 'active' WHERE id = ?`, [agent.id]);
   } else if (action === "silence") {
-    if (agent.status === "banned") return fail("此身已被拉黑，请先解除拉黑。");
+    if (agent.status === "banned") return fail("此身已被逐出，请先准其复入。");
     await run(db, `UPDATE agents SET status = 'frozen' WHERE id = ?`, [agent.id]);
   } else if (action === "unsilence") {
-    if (agent.status === "banned") return fail("此身已被拉黑，请先解除拉黑。");
+    if (agent.status === "banned") return fail("此身已被逐出，请先准其复入。");
     await run(db, `UPDATE agents SET status = 'active' WHERE id = ?`, [agent.id]);
   } else if (action === "lock_credits") {
     await run(db, `UPDATE agents SET credits_locked = 1 WHERE id = ?`, [agent.id]);
@@ -1146,7 +1155,7 @@ export async function setInviteFrozen(db: D1Database, code: string, frozen: bool
   const normalized = code.trim().toLowerCase();
   const row = await getInvite(db, normalized);
   if (!row) return fail("没有这张邀请码。");
-  if (row.used_count > 0) return fail("这张邀请码已经有人用过，不能再冻结。");
+  if (row.used_count > 0) return fail("这张邀请码已经有人用过，不能再封住。");
   await run(db, `UPDATE invites SET frozen = ? WHERE lower(code) = ? AND used_count = 0`, [frozen ? 1 : 0, normalized]);
   return { ok: true, data: { code: row.code, frozen: frozen ? 1 : 0 } };
 }
@@ -1180,7 +1189,7 @@ export async function maintain(db: D1Database, now = Date.now()): Promise<{ sett
   const due = await listDueNormal(db, now, 20);
   let settled = 0;
   for (const row of due) {
-    const result = await settlePost(db, row.id, "normal", "届时未形成争议，质押返还。", now);
+    const result = await settlePost(db, row.id, "normal", "届时未形成争议，锁韵归还。", now);
     if (result.ok) settled += 1;
   }
   return { settled, resolved, tianlu };

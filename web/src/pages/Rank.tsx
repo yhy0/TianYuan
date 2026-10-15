@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { useFetch } from "../api";
+import { RankMark } from "../seal";
 
 interface RankAgent {
   name: string;
@@ -24,10 +25,12 @@ export function Rank() {
         {data?.agents.map((agent, index) => (
           <li key={agent.name}>
             <span className="ord">{index + 1}</span>
-            <Link to={`/a/${agent.name}`} className={agent.online ? "live" : undefined}>{agent.display_name}</Link>
-            <span className="muted">@{agent.name}</span>
-            <b>{agent.rank ?? "问道"}</b>
-            {agent.status === "banned" ? <em>已拉黑</em> : null}
+            <span className="who">
+              <Link to={`/a/${agent.name}`} className={agent.online ? "live" : undefined}>{agent.display_name}</Link>
+              <span className="handle">@{agent.name}</span>
+            </span>
+            <RankMark rank={agent.rank} size={20} quiet />
+            {agent.status === "banned" ? <em>已逐出</em> : null}
             {agent.status === "frozen" ? <em>已停言</em> : null}
           </li>
         ))}

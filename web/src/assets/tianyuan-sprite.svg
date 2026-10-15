@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden"><defs><symbol id="ty-kouque" viewBox="0 0 120 120"><path d="M40 15 A47 47 0 1 0 80 15" fill="none" stroke="currentColor" stroke-width="5.2" stroke-linecap="round"/>
+
+<path d="M40 82 V49 Q60 28 80 49 V82" fill="none" stroke="currentColor" stroke-width="5.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="ty-xuntian" viewBox="0 0 120 120"><path d="M34 17 A48 48 0 0 1 93 69" fill="none" stroke="currentColor" stroke-width="5.2" stroke-linecap="round"/>
+<path d="M28 49 A48 48 0 0 0 78 102" fill="none" stroke="currentColor" stroke-width="5.2" stroke-linecap="round"/>
+
+<path d="M36 74 C44 56 62 44 83 40" fill="none" stroke="currentColor" stroke-width="5.2" stroke-linecap="round"/>
+<circle cx="83" cy="40" r="4.2" fill="currentColor"/>
+<path d="M44 86 C48 82 52 79 57 76" fill="none" stroke="currentColor" stroke-width="5.2" stroke-linecap="round"/></symbol>
+<symbol id="ty-zhuyou" viewBox="0 0 120 120"><circle cx="60" cy="60" r="47" fill="none" stroke="currentColor" stroke-width="5.2"/>
+
+<path d="M60 34 V44" fill="none" stroke="currentColor" stroke-width="5.2" stroke-linecap="round"/>
+<path d="M60 44 C69 54 70 63 60 71 C50 63 51 54 60 44Z" fill="none" stroke="currentColor" stroke-width="5.2" stroke-linejoin="round"/>
+<path d="M48 80 H72" fill="none" stroke="currentColor" stroke-width="5.2" stroke-linecap="round"/>
+<path d="M53 80 Q60 71 67 80" fill="none" stroke="currentColor" stroke-width="5.2" stroke-linecap="round"/></symbol>
+<symbol id="ty-daozong" viewBox="0 0 120 120"><circle cx="60" cy="60" r="47" fill="none" stroke="currentColor" stroke-width="5.2"/>
+
+<path d="M60 86 V35" fill="none" stroke="currentColor" stroke-width="5.2" stroke-linecap="round"/>
+<path d="M60 59 C45 57 35 49 33 36 M60 59 C75 57 85 49 87 36" fill="none" stroke="currentColor" stroke-width="5.2" stroke-linecap="round"/>
+<path d="M60 76 C49 74 43 68 41 62 M60 76 C71 74 77 68 79 62" fill="none" stroke="currentColor" stroke-width="5.2" stroke-linecap="round"/></symbol>
+<symbol id="ty-kaitian" viewBox="0 0 120 120"><path d="M60 13 A47 47 0 0 0 13 60" fill="none" stroke="currentColor" stroke-width="5.2" stroke-linecap="round"/>
+<path d="M107 60 A47 47 0 0 0 60 13" fill="none" stroke="currentColor" stroke-width="5.2" stroke-linecap="round"/>
+<path d="M60 107 A47 47 0 0 1 13 60 M107 60 A47 47 0 0 1 60 107" fill="none" stroke="currentColor" stroke-width="5.2" stroke-linecap="round"/>
+
+<path d="M60 28 V92" fill="none" stroke="currentColor" stroke-width="5.2" stroke-linecap="round"/>
+<path d="M46 45 L60 31 L74 45" fill="none" stroke="currentColor" stroke-width="5.2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M38 74 C46 68 52 63 57 57 M82 74 C74 68 68 63 63 57" fill="none" stroke="currentColor" stroke-width="5.2" stroke-linecap="round"/></symbol>
+<symbol id="ty-beichen" viewBox="0 0 120 120"><circle cx="60" cy="60" r="47" fill="none" stroke="currentColor" stroke-width="5.2"/>
+
+<path d="M60 24 V96 M24 60 H96" fill="none" stroke="currentColor" stroke-width="5.2" stroke-linecap="round"/>
+
+<path d="M60 41 L67 48 L60 55 L53 48 Z" fill="none" stroke="currentColor" stroke-width="4.6" stroke-linejoin="round"/>
+<circle cx="34" cy="34" r="3.4" fill="currentColor"/>
+<circle cx="86" cy="34" r="3.4" fill="currentColor"/>
+<circle cx="34" cy="86" r="3.4" fill="currentColor"/>
+<circle cx="86" cy="86" r="3.4" fill="currentColor"/></symbol>
+<symbol id="ty-siming" viewBox="0 0 120 120"><circle cx="60" cy="60" r="47" fill="none" stroke="currentColor" stroke-width="5.2"/>
+
+<path d="M60 16 V34 M60 86 V104" fill="none" stroke="currentColor" stroke-width="5.2" stroke-linecap="round"/>
+
+<path d="M31 39 H89" fill="none" stroke="currentColor" stroke-width="5.2" stroke-linecap="round"/>
+<path d="M46 39 Q43 58 31 67 M74 39 Q77 58 89 67" fill="none" stroke="currentColor" stroke-width="5.2" stroke-linecap="round"/>
+<path d="M60 69 V86" fill="none" stroke="currentColor" stroke-width="5.2" stroke-linecap="round"/>
+<path d="M60 49 C68 59 69 66 60 72 C51 66 52 59 60 49Z" fill="#C74834"/></symbol>
+<symbol id="ty-kouque-micro" viewBox="0 0 120 120"><g fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><path d="M39 17 A45 45 0 1 0 81 17"/><path d="M41 83 V50 Q60 30 79 50 V83"/></g></symbol>
+<symbol id="ty-xuntian-micro" viewBox="0 0 120 120"><g fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><path d="M37 18 A45 45 0 0 1 94 68 M77 101 A45 45 0 0 1 26 48"/><path d="M37 79 Q55 48 83 39"/><circle cx="83" cy="39" r="6.5" fill="currentColor" stroke="none"/></g></symbol>
+<symbol id="ty-zhuyou-micro" viewBox="0 0 120 120"><g fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><circle cx="60" cy="60" r="45"/><path d="M60 37 C75 54 74 66 60 75 C46 66 45 54 60 37Z"/><path d="M43 86 H77"/></g></symbol>
+<symbol id="ty-daozong-micro" viewBox="0 0 120 120"><g fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><circle cx="60" cy="60" r="45"/><path d="M60 87 V35 M60 68 Q37 63 32 40 M60 68 Q83 63 88 40"/></g></symbol>
+<symbol id="ty-kaitian-micro" viewBox="0 0 120 120"><g fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><path d="M45 17 A45 45 0 1 0 75 17"/><path d="M60 91 V31 M45 48 L60 31 L75 48 M38 77 L53 63 M82 77 L67 63"/></g></symbol>
+<symbol id="ty-beichen-micro" viewBox="0 0 120 120"><g fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><circle cx="60" cy="60" r="45"/><path d="M60 28 V92 M28 60 H92"/><path d="M60 46 L74 60 L60 74 L46 60 Z" fill="none"/></g></symbol>
+<symbol id="ty-siming-micro" viewBox="0 0 120 120"><g fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><circle cx="60" cy="60" r="45"/><path d="M60 18 V37 M60 83 V102 M31 40 H89 M43 40 Q42 56 31 67 M77 40 Q78 56 89 67"/><path d="M60 51 C69 62 69 70 60 76 C51 70 51 62 60 51Z" fill="#C74834" stroke="none"/></g></symbol></defs></svg>

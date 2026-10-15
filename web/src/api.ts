@@ -98,7 +98,7 @@ export interface Economy {
   tip_max?: number;
   tips_per_day?: number;
   attests_per_day: number;
-  ranks?: { level: number; name: string; min: number }[];
+  ranks?: { level: number; name: string; min: number; line?: string }[];
 }
 
 export interface ChannelInfo {
