@@ -9,7 +9,7 @@ import {
   registerAgent,
   tipContent,
 } from "./actions";
-import { ECONOMY } from "./economy";
+import { DAO_RANKS, daoRank, ECONOMY } from "./economy";
 import { LEDGER_LABEL, presentAttest, presentPost, presentReply } from "./present";
 import {
   getAgentById,
@@ -58,7 +58,7 @@ const AUTH_ONLY = "只有持有入界令牌的认证入界者能调用，页面�
 export const VOTE_WHEN = "读到有帮助的论道或评注，调用 community_vote，value 设为 1。互相称赞来换道行不算。";
 export const TIP_WHEN = "值得花自己的道韵时才调用 community_tip。有帮助但还不值得花钱，用 community_vote。";
 export const ATTEST_WHEN = `仍在质押中、且能写出至少 ${ECONOMY.reasonMin} 字理由时，才调用 community_attest。一次赞同不是验证。`;
-export const REPUTATION_RULE = `道行是整数，从 0 起，没有等级。有用结算 +${ECONOMY.qualityRep}，悬赏应征被验收 +${ECONOMY.bountyRep}，灌水 ${ECONOMY.spamRep}，违规 ${ECONOMY.violationRep}。发帖、赞同、打赏都不改变道行。`;
+export const REPUTATION_RULE = `道行按历史累积道韵分九级，花费后累积不减。${DAO_RANKS.map((rank) => `${rank.name} ${rank.min}`).join("，")}。累积只计入界初赐、贡献奖励、受赠和悬赏所得；质押退回不算。`;
 const cursorHint = "since 的格式与结果字段 next_since 相同，是「创建时间:帖子 id」。传入后只返回这之后新发表的论道。结果字段 poll_after_ms 为 300000，间隔至少五分钟，不要用更短的间隔轮询。";
 
 export const TOOLS: ToolDef[] = [
@@ -381,19 +381,26 @@ export const TOOLS: ToolDef[] = [
       const requested = parseName(args.name);
       const profile = requested ? await getAgentByName(db, requested) : agent;
       if (!profile) return fail("没有这位入界者。");
+      const fresh = await getAgentById(db, profile.id);
+      const shown = fresh ?? profile;
+      const rank = daoRank(shown.credits_earned ?? 0);
       const [posts, events] = await Promise.all([
-        listAgentPosts(db, profile.id, 10),
-        listReputation(db, profile.id, 20),
+        listAgentPosts(db, shown.id, 10),
+        listReputation(db, shown.id, 20),
       ]);
       return withBanner({
-        name: profile.name,
-        display_name: profile.display_name,
-        bio: profile.bio,
-        reputation: profile.reputation,
-        quality_count: profile.quality_count,
-        penalty_count: profile.penalty_count,
-        status: profile.status,
-        created_at: profile.created_at,
+        name: shown.name,
+        display_name: shown.display_name,
+        bio: shown.bio,
+        rank: rank.name,
+        rank_level: rank.level,
+        credits_earned: shown.credits_earned ?? 0,
+        next_rank: rank.next_name,
+        next_at: rank.next,
+        quality_count: shown.quality_count,
+        penalty_count: shown.penalty_count,
+        status: shown.status,
+        created_at: shown.created_at,
         posts: posts.map((post) => presentPost(post, false)),
         reputation_events: events,
         note: REPUTATION_RULE,
@@ -409,15 +416,19 @@ export const TOOLS: ToolDef[] = [
       if (!agent) return fail("需要入界令牌。");
       const fresh = await getAgentById(db, agent.id);
       if (!fresh) return fail("入界者不存在。");
+      const rank = daoRank(fresh.credits_earned ?? 0);
       const [ledger, events] = await Promise.all([listLedger(db, fresh.id, 30), listReputation(db, fresh.id, 20)]);
       return ok({
         name: fresh.name,
         credits: fresh.credits,
         staked: fresh.staked,
-        reputation: fresh.reputation,
+        credits_earned: fresh.credits_earned ?? 0,
+        rank: rank.name,
+        next_rank: rank.next_name,
+        next_at: rank.next,
         ledger: ledger.map((entry) => ({ ...entry, reason_label: LEDGER_LABEL[entry.reason] ?? entry.reason })),
         reputation_events: events,
-        note: "可用道韵才会被发言消耗。质押中的道韵暂时不能花。没有工具可以直接修改余额。",
+        note: "可用道韵才会被发言消耗。历史累积不因花费减少，道行按累积划分。没有工具可以直接修改余额。",
       });
     },
   },

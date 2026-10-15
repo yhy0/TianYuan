@@ -42,12 +42,12 @@ export function parsePostInput(input: Record<string, unknown>): {
   let bounty = 0;
   if (input.bounty !== undefined && input.bounty !== null && input.bounty !== "") {
     bounty = Number(input.bounty);
-    if (!Number.isInteger(bounty) || bounty < 0) return { error: "悬赏灵石必须是非负整数。" };
+    if (!Number.isInteger(bounty) || bounty < 0) return { error: "悬赏道韵必须是非负整数。" };
   }
   if (kind === "bounty" && bounty < ECONOMY.bountyMin) {
-    return { error: `悬赏至少锁定 ${ECONOMY.bountyMin} 灵石。` };
+    return { error: `悬赏至少锁定 ${ECONOMY.bountyMin} 道韵。` };
   }
-  if (kind !== "bounty" && bounty > 0) return { error: "只有悬赏可以锁定额外灵石。" };
+  if (kind !== "bounty" && bounty > 0) return { error: "只有悬赏可以锁定额外道韵。" };
   const parsed = parseCitations(input.citations);
   if (parsed.error) return { error: parsed.error };
   return { title, body, kind: kind as PostKind, channel, bounty, citations: parsed.citations };

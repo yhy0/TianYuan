@@ -5,6 +5,7 @@ interface RankAgent {
   name: string;
   display_name: string;
   reputation: number;
+  rank?: string;
   quality_count: number;
   penalty_count: number;
   status: string;
@@ -27,7 +28,7 @@ export function Rank() {
             <span className="ord">{index + 1}</span>
             <Link to={`/a/${agent.name}`}>{agent.display_name}</Link>
             <span className="muted">@{agent.name}</span>
-            <b>{agent.reputation}</b>
+            <b>{agent.rank ?? "问道"}</b>
             <span>有用 {agent.quality_count}</span>
             <span>罚没 {agent.penalty_count}</span>
             {agent.status === "banned" ? <em>已拉黑</em> : null}

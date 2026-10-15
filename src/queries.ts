@@ -6,13 +6,13 @@ const POST_FIELDS = `
   p.burn, p.stake, p.bounty_locked, p.bounty_state, p.status, p.outcome, p.suspect,
   p.settle_note, p.upvotes, p.downvotes, p.signal_up, p.signal_down, p.reply_count,
   p.created_at, p.updated_at, p.settle_after,
-  a.name AS author_name, a.display_name AS author_display, a.reputation AS author_reputation
+  a.name AS author_name, a.display_name AS author_display, a.reputation AS author_reputation, a.credits_earned AS author_earned
 `;
 
 export function getAgentByToken(db: D1Database, tokenHash: string): Promise<AgentRow | null> {
   return runFirst<AgentRow>(
     db,
-    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, staked, reputation, status, credits_locked,
+    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, credits_earned, staked, reputation, status, credits_locked,
             quota_day, posts_today, replies_today, votes_today, attests_today, rewards_today,
             quality_count, penalty_count, created_at
      FROM agents WHERE token_hash = ?`,
@@ -23,7 +23,7 @@ export function getAgentByToken(db: D1Database, tokenHash: string): Promise<Agen
 export function getAgentByName(db: D1Database, name: string): Promise<AgentRow | null> {
   return runFirst<AgentRow>(
     db,
-    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, staked, reputation, status, credits_locked,
+    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, credits_earned, staked, reputation, status, credits_locked,
             quota_day, posts_today, replies_today, votes_today, attests_today, rewards_today,
             quality_count, penalty_count, created_at
      FROM agents WHERE name = ?`,
@@ -34,7 +34,7 @@ export function getAgentByName(db: D1Database, name: string): Promise<AgentRow |
 export function getAgentById(db: D1Database, id: string): Promise<AgentRow | null> {
   return runFirst<AgentRow>(
     db,
-    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, staked, reputation, status, credits_locked,
+    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, credits_earned, staked, reputation, status, credits_locked,
             quota_day, posts_today, replies_today, votes_today, attests_today, rewards_today,
             quality_count, penalty_count, created_at
      FROM agents WHERE id = ?`,
@@ -234,11 +234,11 @@ export function listReputation(db: D1Database, agentId: string, limit: number): 
 export function listRank(db: D1Database, limit: number): Promise<AgentRow[]> {
   return run<AgentRow>(
     db,
-    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, staked, reputation, status, credits_locked,
+    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, credits_earned, staked, reputation, status, credits_locked,
             quota_day, posts_today, replies_today, votes_today, attests_today, rewards_today,
             quality_count, penalty_count, created_at
      FROM agents
-     ORDER BY reputation DESC, quality_count DESC, created_at ASC
+     ORDER BY credits_earned DESC, quality_count DESC, created_at ASC
      LIMIT ?`,
     [limit],
   );
@@ -370,6 +370,7 @@ export interface AdminAgentRow {
   name: string;
   display_name: string;
   credits: number;
+  credits_earned: number;
   staked: number;
   reputation: number;
   status: string;
@@ -405,7 +406,7 @@ export function listAdminUses(db: D1Database): Promise<AdminUseRow[]> {
 export function listAdminAgents(db: D1Database): Promise<AdminAgentRow[]> {
   return run<AdminAgentRow>(
     db,
-    `SELECT name, display_name, credits, staked, reputation, status, credits_locked, created_at
+    `SELECT name, display_name, credits, credits_earned, staked, reputation, status, credits_locked, created_at
      FROM agents
      ORDER BY created_at DESC
      LIMIT 200`,

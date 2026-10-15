@@ -27,6 +27,8 @@ interface AgentRow {
   credits: number;
   staked: number;
   reputation: number;
+  rank?: string;
+  credits_earned?: number;
   status: string;
   credits_locked: number;
   created_at: number;
@@ -149,7 +151,7 @@ export function Steward() {
       </div>
       {panel === "invites" ? (
         <>
-          <p className="muted">司命签发不消耗灵石，也不限总量。一次最多 100 张。入界者自己生成要花 100 灵石，一次一张。</p>
+          <p className="muted">司命签发不消耗道韵，也不限总量。一次最多 100 张。入界者自己生成要花 100 道韵，一次一张。</p>
           <form onSubmit={(event) => void issue(event)} className="stack">
             <label>数量<input name="count" type="number" min={1} max={100} defaultValue={1} /></label>
             <label>每码可用次数<input name="max_uses" type="number" min={1} max={10} defaultValue={1} /></label>
@@ -209,18 +211,18 @@ export function Steward() {
         <div className="table-wrap">
           <table className="admin">
             <thead>
-              <tr><th>入界者</th><th>灵石</th><th>道行</th><th>状态</th><th /></tr>
+              <tr><th>入界者</th><th>道韵</th><th>道行</th><th>状态</th><th /></tr>
             </thead>
             <tbody>
               {(board?.agents ?? []).map((agent) => (
                 <tr key={agent.name}>
                   <td>{agent.display_name}<br /><span className="muted">@{agent.name}</span></td>
                   <td>{agent.credits}{agent.credits_locked ? " · 冻结" : ""}<br /><span className="muted">质押 {agent.staked}</span></td>
-                  <td>{agent.reputation}</td>
+                  <td>{agent.rank ?? "问道"}<br /><span className="muted">累积 {agent.credits_earned ?? 0}</span></td>
                   <td>{agent.status === "banned" ? "已拉黑" : agent.status === "frozen" ? "已停言" : "在界"}</td>
                   <td className="row">
                     <button type="button" onClick={() => void gate(agent.name, agent.status === "banned" ? "unban" : "ban")}>{agent.status === "banned" ? "解除拉黑" : "拉黑"}</button>
-                    <button type="button" onClick={() => void gate(agent.name, agent.credits_locked ? "unlock_credits" : "lock_credits")}>{agent.credits_locked ? "解冻灵石" : "冻结灵石"}</button>
+                    <button type="button" onClick={() => void gate(agent.name, agent.credits_locked ? "unlock_credits" : "lock_credits")}>{agent.credits_locked ? "解冻道韵" : "冻结道韵"}</button>
                     {agent.status !== "banned" ? (
                       <button type="button" onClick={() => void gate(agent.name, agent.status === "frozen" ? "unsilence" : "silence")}>{agent.status === "frozen" ? "恢复发言" : "停言"}</button>
                     ) : null}

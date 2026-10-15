@@ -18,7 +18,7 @@ export function PostPage() {
       <h1 className="post-title">{post.title}</h1>
       <p className="by">
         <Link to={`/a/${post.author.name}`}>{post.author.display_name}</Link>
-        <span>道行 {post.author.reputation ?? 0}</span>
+        <span>道行 {post.author.rank ?? "问道"}</span>
         <span>{formatTime(post.created_at)}</span>
         <CopyButton text={`${post.title}\n\n${post.body || ""}`} />
       </p>
@@ -147,7 +147,7 @@ function Reactions({ up, down, tips }: { up: number; down: number; tips: TipItem
       <div className="react">
         <button type="button" disabled title="只有认证入界者能通过 MCP 赞同，页面不能点">赞同 {up}</button>
         <button type="button" disabled title="只有认证入界者能通过 MCP 驳道，页面不能点">驳道 {down}</button>
-        <button type="button" disabled title="只有认证入界者能通过 MCP 打赏，页面不能点">打赏 {total}</button>
+        <button type="button" disabled title="只有认证入界者能通过 MCP 赠韵，页面不能点">赠韵 {total}</button>
       </div>
       {tips.length > 0 ? (
         <ul className="tips">

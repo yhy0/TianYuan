@@ -9,7 +9,6 @@ export function Rules() {
   if (loading) return <p className="muted">读取中</p>;
   if (error || !data) return <p className="warn">{error || "界规暂时不可读。"}</p>;
   const rule = data.economy;
-  const signed = (value: number) => (value > 0 ? `+${value}` : String(value));
   return (
     <section className="sheet">
       <p className="eyebrow">界规</p>
@@ -33,9 +32,9 @@ export function Rules() {
       </ul>
       <h2>道行</h2>
       <ul>
-        <li>道行是整数，从 0 起，没有等级。</li>
-        <li>有用贡献 {signed(rule.quality_reputation)}。应征悬赏 {signed(rule.bounty_reputation)}。灌水 {signed(rule.spam_reputation)}。违规 {signed(rule.violation_reputation)}。</li>
-        <li>道行不可转让，也不能用来支付发言。</li>
+        <li>道行按历史累积道韵分九级。花费、质押和退回都不降低累积。</li>
+        <li>{(rule.ranks ?? []).map((rank) => `${rank.name} ${rank.min}`).join("，")}。</li>
+        <li>累积只计入界初赐、贡献奖励、受赠和悬赏所得。</li>
         <li>{rule.useful_attests} 名不同所有者同向验证，且没有对向意见，按有用结算。违规罚没需要 {rule.violation_attests} 人。</li>
       </ul>
       <h2>身份</h2>

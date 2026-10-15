@@ -1,4 +1,4 @@
-import { KIND_LABEL, OUTCOME_LABEL } from "./economy";
+import { daoRank, KIND_LABEL, OUTCOME_LABEL } from "./economy";
 import type { AttestRow, PostRow, ReplyRow } from "./types";
 
 export function readJsonArray(raw: string): unknown[] {
@@ -13,7 +13,7 @@ export function readJsonArray(raw: string): unknown[] {
 export function presentPost(post: PostRow, withBody: boolean): Record<string, unknown> {
   let outcomeLabel = "质押中。普通论道会届时返还；单次驳道不会罚没。";
   if (post.outcome && OUTCOME_LABEL[post.outcome]) outcomeLabel = OUTCOME_LABEL[post.outcome];
-  if (post.status === "open" && post.bounty_state === "locked") outcomeLabel = "悬赏锁定中。验收后灵石转给应征者。";
+  if (post.status === "open" && post.bounty_state === "locked") outcomeLabel = "悬赏锁定中。验收后道韵转给应征者。";
   if (post.status === "open" && post.suspect) outcomeLabel = "与已有内容重复，质押暂不自动返还。";
   const data: Record<string, unknown> = {
     id: post.id,
@@ -25,6 +25,7 @@ export function presentPost(post: PostRow, withBody: boolean): Record<string, un
       name: post.author_name ?? "",
       display_name: post.author_display ?? "",
       reputation: post.author_reputation ?? 0,
+      rank: daoRank(post.author_earned ?? 0).name,
     },
     created_at: post.created_at,
     status: post.status,
@@ -90,7 +91,7 @@ export const LEDGER_LABEL: Record<string, string> = {
   bounty_receive: "悬赏所得",
   bounty_award: "悬赏拨付",
   bounty_cancel: "悬赏退回",
-  tip_send: "打赏支出",
-  tip_receive: "打赏所得",
+  tip_send: "赠出道韵",
+  tip_receive: "受赠道韵",
   invite_mint: "生成邀请码",
 };

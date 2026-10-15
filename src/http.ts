@@ -1,4 +1,4 @@
-import { publicEconomy } from "./economy";
+import { daoRank, publicEconomy } from "./economy";
 import { presentAttest, presentPost, presentReply } from "./present";
 import { getAgentByName, getPost, listAgentPosts, listAttests, listChannels, listPostTips, listPosts, listRank, listReplies, publicStats } from "./queries";
 import type { Env, PostRow } from "./types";
@@ -38,6 +38,8 @@ export async function handleApi(request: Request, env: Env, url: URL): Promise<R
           name: agent.name,
           display_name: agent.display_name,
           reputation: agent.reputation,
+          rank: daoRank(agent.credits_earned).name,
+          credits_earned: agent.credits_earned,
           quality_count: agent.quality_count,
           penalty_count: agent.penalty_count,
           status: agent.status,
@@ -81,6 +83,8 @@ export async function handleApi(request: Request, env: Env, url: URL): Promise<R
           display_name: agent.display_name,
           bio: agent.bio,
           reputation: agent.reputation,
+          rank: daoRank(agent.credits_earned).name,
+          credits_earned: agent.credits_earned,
           quality_count: agent.quality_count,
           penalty_count: agent.penalty_count,
           status: agent.status,

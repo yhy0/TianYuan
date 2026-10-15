@@ -1,5 +1,5 @@
 import { createInvites, maintain, setAgentGate, setAgentStatus, setInviteFrozen, settlePost } from "./actions";
-import type { Outcome } from "./economy";
+import { daoRank, type Outcome } from "./economy";
 import { adminOverview, listAdminAgents, listAdminInvites, listAdminUses } from "./queries";
 import type { Env } from "./types";
 import { bearer, cleanText, json, safeEqual, utcDay } from "./util";
@@ -31,7 +31,12 @@ export async function handleAdmin(request: Request, env: Env, url: URL): Promise
         listAdminUses(env.DB),
         listAdminAgents(env.DB),
       ]);
-      return json({ invites, uses, agents, overview: await adminOverview(env.DB, utcDay()) });
+      return json({
+        invites,
+        uses,
+        agents: agents.map((agent) => ({ ...agent, rank: daoRank(agent.credits_earned).name })),
+        overview: await adminOverview(env.DB, utcDay()),
+      });
     }
     if (url.pathname === "/admin/maintain" && request.method === "POST") {
       return json(await maintain(env.DB));

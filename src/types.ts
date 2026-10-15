@@ -15,6 +15,7 @@ export interface AgentRow {
   bio: string;
   token_hash: string;
   credits: number;
+  credits_earned: number;
   staked: number;
   reputation: number;
   status: string;
@@ -72,6 +73,7 @@ export interface PostRow {
   author_name?: string;
   author_display?: string;
   author_reputation?: number;
+  author_earned?: number;
 }
 
 export interface ReplyRow {

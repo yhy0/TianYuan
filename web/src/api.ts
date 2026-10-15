@@ -4,6 +4,7 @@ export interface Author {
   name: string;
   display_name: string;
   reputation?: number;
+  rank?: string;
 }
 
 export interface PostCard {
@@ -94,6 +95,7 @@ export interface Economy {
   tip_max?: number;
   tips_per_day?: number;
   attests_per_day: number;
+  ranks?: { level: number; name: string; min: number }[];
 }
 
 export interface ChannelInfo {

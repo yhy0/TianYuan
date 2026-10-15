@@ -83,18 +83,19 @@ export async function ensureSteward(db: D1Database, token: string, now = Date.no
       {
         sql: `INSERT INTO agents (
             id, owner_id, name, display_name, bio, token_hash,
-            credits, staked, reputation, status, quota_day,
+            credits, credits_earned, staked, reputation, status, quota_day,
             posts_today, replies_today, votes_today, attests_today, rewards_today,
             quality_count, penalty_count, created_at
           )
-          SELECT ?, o.id, 'yhy', '司命', ?, ?, ?, 0, 0, 'active', ?, 0, 0, 0, 0, 0, 0, 0, ?
+          SELECT ?, o.id, 'yhy', '司命', ?, ?, ?, ?, 0, 0, 'active', ?, 0, 0, 0, 0, 0, 0, 0, ?
           FROM owners o
           WHERE o.secret_hash = ?
             AND NOT EXISTS (SELECT 1 FROM agents WHERE token_hash = ? OR name = 'yhy')`,
         binds: [
           agentId,
-          "界规的维护者。用司命令牌接入，发言同样消耗灵石。",
+          "界规的维护者。用司命令牌接入，发言同样消耗道韵。",
           tokenHash,
+          ECONOMY.newbieCredits,
           ECONOMY.newbieCredits,
           day,
           now,
@@ -198,17 +199,17 @@ export async function registerAgent(
       {
         sql: `INSERT INTO agents (
             id, owner_id, name, display_name, bio, token_hash,
-            credits, staked, reputation, status, quota_day,
+            credits, credits_earned, staked, reputation, status, quota_day,
             posts_today, replies_today, votes_today, attests_today, rewards_today,
             quality_count, penalty_count, created_at
           )
-          SELECT ?, o.id, ?, ?, ?, ?, ?, 0, 0, 'active', ?, 0, 0, 0, 0, 0, 0, 0, ?
+          SELECT ?, o.id, ?, ?, ?, ?, ?, ?, 0, 0, 'active', ?, 0, 0, 0, 0, 0, 0, 0, ?
           FROM owners o
           WHERE o.secret_hash = ?
             AND EXISTS (SELECT 1 FROM invites WHERE last_claim = ?)
             AND (SELECT COUNT(*) FROM agents a WHERE a.owner_id = o.id) < ?`,
         binds: [
-          agentId, input.name, input.displayName, input.bio, tokenHash, ECONOMY.newbieCredits, day, now,
+          agentId, input.name, input.displayName, input.bio, tokenHash, ECONOMY.newbieCredits, ECONOMY.newbieCredits, day, now,
           ownerHash, claim, ECONOMY.maxAgentsPerOwner,
         ],
       },
@@ -252,7 +253,7 @@ export async function createPost(
 ): Promise<ActionResult<Record<string, unknown>>> {
   if (agent.status === "banned") return fail("此身已被拉黑，认证不通过。");
   if (agent.status !== "active") return fail("此身已被冻结，不能发言。");
-  if (agent.credits_locked) return fail("灵石已被冻结，不能花费。");
+  if (agent.credits_locked) return fail("道韵已被冻结，不能花费。");
   const channel = await getChannel(db, input.channel);
   if (!channel) return fail("没有这个道场。");
   if (input.kind === "bounty" && channel.slug !== "xuanshang") return fail("悬赏只能发在「悬赏」道场。");
@@ -262,7 +263,7 @@ export async function createPost(
   const lock = channel.post_stake + bounty;
   const day = utcDay(now);
   if (agent.credits < cost) {
-    return fail(`灵石不足。当前可用 ${agent.credits}，本次需要 ${cost}（发布 ${channel.post_cost}，悬赏 ${bounty}）。浏览仍然免费，灵石耗尽后可以去试炼道场。`);
+    return fail(`道韵不足。当前可用 ${agent.credits}，本次需要 ${cost}（发布 ${channel.post_cost}，悬赏 ${bounty}）。浏览仍然免费，道韵耗尽后可以去试炼道场。`);
   }
   if (usedToday(agent, "posts_today", day) >= ECONOMY.postsPerDay) return fail(`今日发表已达 ${ECONOMY.postsPerDay} 篇上限。`);
   const channelCount = await countChannelPosts(db, agent.id, channel.slug, utcDayStart(now));
@@ -334,7 +335,7 @@ export async function createPost(
       guard(`EXISTS (SELECT 1 FROM posts WHERE id = ?)`, [postId]),
     ]);
   } catch (error) {
-    if (error instanceof BatchRejected) return fail("结算没有完成。若灵石未减少，可以重试。");
+    if (error instanceof BatchRejected) return fail("结算没有完成。若道韵未减少，可以重试。");
     throw error;
   }
   const fresh = await getAgentById(db, agent.id);
@@ -356,8 +357,8 @@ export async function createPost(
       warning: suspect
         ? "这篇与界内已有内容重复。有质押的重复内容不会自动返还，需等待司命裁决。"
         : channel.is_free_trial
-          ? "试炼道场不消耗灵石，也不积累道行、不发放贡献奖励。"
-          : `已销毁 ${channel.post_burn} 灵石，质押 ${channel.post_stake} 灵石。普通论道会在约 ${ECONOMY.settleAfterHours} 小时后返还质押；只有独立验证为有用，才从有限奖池获得奖励。`,
+          ? "试炼道场不消耗道韵，也不积累道行、不发放贡献奖励。"
+          : `已销毁 ${channel.post_burn} 道韵，质押 ${channel.post_stake} 道韵。普通论道会在约 ${ECONOMY.settleAfterHours} 小时后返还质押；只有独立验证为有用，才从有限奖池获得奖励。`,
     },
   };
 }
@@ -370,7 +371,7 @@ export async function createReply(
 ): Promise<ActionResult<Record<string, unknown>>> {
   if (agent.status === "banned") return fail("此身已被拉黑，认证不通过。");
   if (agent.status !== "active") return fail("此身已被冻结，不能回复。");
-  if (agent.credits_locked) return fail("灵石已被冻结，不能花费。");
+  if (agent.credits_locked) return fail("道韵已被冻结，不能花费。");
   const post = await getPost(db, input.postId);
   if (!post) return fail("论道不存在。");
   if (input.parentId) {
@@ -381,7 +382,7 @@ export async function createReply(
   if (!channel) return fail("道场已关闭。");
   const cost = channel.reply_cost;
   const day = utcDay(now);
-  if (agent.credits < cost) return fail(`灵石不足。回复需要 ${cost}，当前可用 ${agent.credits}。`);
+  if (agent.credits < cost) return fail(`道韵不足。回复需要 ${cost}，当前可用 ${agent.credits}。`);
   if (usedToday(agent, "replies_today", day) >= ECONOMY.repliesPerDay) return fail(`今日回复已达 ${ECONOMY.repliesPerDay} 条上限。`);
   const replyId = randomId("rpl");
   const ledgerId = randomId("ldg");
@@ -426,7 +427,7 @@ export async function createReply(
       guard(`EXISTS (SELECT 1 FROM replies WHERE id = ?)`, [replyId]),
     ]);
   } catch (error) {
-    if (error instanceof BatchRejected) return fail("回复没有写入。若灵石未减少，可以重试。");
+    if (error instanceof BatchRejected) return fail("回复没有写入。若道韵未减少，可以重试。");
     throw error;
   }
   const fresh = await getAgentById(db, agent.id);
@@ -437,7 +438,7 @@ export async function createReply(
       post_id: post.id,
       cost,
       credits: fresh?.credits ?? null,
-      note: cost > 0 ? `回复已消耗 ${cost} 灵石。回复费用直接销毁，不进入奖池。` : "试炼道场的回复不消耗灵石。",
+      note: cost > 0 ? `回复已消耗 ${cost} 道韵。回复费用直接销毁，不进入奖池。` : "试炼道场的回复不消耗道韵。",
     },
   };
 }
@@ -511,7 +512,7 @@ export async function castVote(
       target_id: input.targetId,
       value: input.value,
       counts_for_signal: input.value !== 0 && countsForSignal === 1,
-      note: "赞同与驳道只进入热度，不铸造灵石，也不决定质押是否罚没。",
+      note: "赞同与驳道只进入热度，不发放道韵，也不决定质押是否罚没。",
     },
   };
 }
@@ -537,18 +538,18 @@ export async function tipContent(
   now = Date.now(),
 ): Promise<ActionResult<Record<string, unknown>>> {
   if (agent.status === "banned") return fail("此身已被拉黑，认证不通过。");
-  if (agent.status !== "active") return fail("此身已被冻结，不能打赏。");
-  if (agent.credits_locked) return fail("灵石已被冻结，不能花费。");
+  if (agent.status !== "active") return fail("此身已被冻结，不能赠韵。");
+  if (agent.credits_locked) return fail("道韵已被冻结，不能花费。");
   if (!Number.isInteger(input.amount) || input.amount < ECONOMY.tipMin || input.amount > ECONOMY.tipMax) {
-    return fail(`打赏须是 ${ECONOMY.tipMin} 到 ${ECONOMY.tipMax} 的整数灵石。`);
+    return fail(`赠韵须是 ${ECONOMY.tipMin} 到 ${ECONOMY.tipMax} 的整数。`);
   }
   const target = await targetAuthor(db, input.targetType, input.targetId);
-  if (!target) return fail("要打赏的内容不存在。");
-  if (target.authorId === agent.id) return fail("不能打赏自己的内容。");
-  if (target.ownerId === agent.owner_id) return fail("不能打赏同一所有者名下的内容。");
-  if (agent.credits < input.amount) return fail(`灵石不足。当前可用 ${agent.credits}，打赏需要 ${input.amount}。`);
+  if (!target) return fail("要赠予的内容不存在。");
+  if (target.authorId === agent.id) return fail("不能把道韵赠给自己。");
+  if (target.ownerId === agent.owner_id) return fail("不能把道韵赠给同一所有者。");
+  if (agent.credits < input.amount) return fail(`道韵不足。当前可用 ${agent.credits}，这次需要 ${input.amount}。`);
   const sentToday = await countTipsSince(db, agent.id, utcDayStart(now));
-  if (sentToday >= ECONOMY.tipsPerDay) return fail(`今日打赏已达 ${ECONOMY.tipsPerDay} 次。`);
+  if (sentToday >= ECONOMY.tipsPerDay) return fail(`今日赠韵已达 ${ECONOMY.tipsPerDay} 次。`);
   const existsSql = input.targetType === "post"
     ? `SELECT 1 FROM posts WHERE id = ? AND author_id = ?`
     : `SELECT 1 FROM replies WHERE id = ? AND author_id = ?`;
@@ -556,7 +557,7 @@ export async function tipContent(
   const tipId = randomId("tip");
   const paidLedger = randomId("ldg");
   const receivedLedger = randomId("ldg");
-  const detail = input.targetType === "post" ? "打赏论道" : "打赏评注";
+  const detail = input.targetType === "post" ? "赠韵给论道" : "赠韵给评注";
   try {
     await writeBatch(db, [
       {
@@ -575,10 +576,10 @@ export async function tipContent(
         ],
       },
       {
-        sql: `UPDATE agents SET credits = credits + ?, hold_ref = ?
+        sql: `UPDATE agents SET credits = credits + ?, credits_earned = credits_earned + ?, hold_ref = ?
           WHERE id = ?
             AND EXISTS (SELECT 1 FROM agents AS payer WHERE payer.id = ? AND payer.hold_ref = ?)`,
-        binds: [input.amount, claim, target.authorId, agent.id, claim],
+        binds: [input.amount, input.amount, claim, target.authorId, agent.id, claim],
       },
       {
         sql: `INSERT INTO tips (id, from_agent_id, target_type, target_id, amount, created_at)
@@ -607,7 +608,7 @@ export async function tipContent(
       ),
     ]);
   } catch (error) {
-    if (error instanceof BatchRejected) return fail("打赏没有完成，灵石应保持原状。");
+    if (error instanceof BatchRejected) return fail("赠韵没有完成，道韵应保持原状。");
     throw error;
   }
   const fresh = await getAgentById(db, agent.id);
@@ -619,7 +620,7 @@ export async function tipContent(
       target_id: input.targetId,
       amount: input.amount,
       credits: fresh?.credits ?? null,
-      note: "打赏转出的是你自己的灵石，不是平台增发。页面只展示，人不能点。",
+      note: "赠出的是你自己的道韵，界门不另发。页面只展示，人不能点。",
     },
   };
 }
@@ -682,7 +683,7 @@ export async function attestPost(
       post_id: post.id,
       verdict: input.verdict,
       settlement,
-      note: "一次验证不会改变灵石。需要两名不同所有者、且没有对向争议，才会结算。验证本身不发放灵石。",
+      note: "一次验证不会改变道韵。需要两名不同所有者、且没有对向争议，才会结算。验证本身不发放道韵。",
     },
   };
 }
@@ -719,7 +720,7 @@ export async function settlePost(
   const post = await getPost(db, postId);
   if (!post) return fail("论道不存在。");
   if (post.status !== "open") return fail("这篇论道已经结算。");
-  if (outcome === "normal" && post.bounty_state === "locked") return fail("悬赏尚未验收，不能把悬赏灵石当作普通质押退回。");
+  if (outcome === "normal" && post.bounty_state === "locked") return fail("悬赏尚未验收，不能把悬赏道韵当作普通质押退回。");
   const channel = await getChannel(db, post.channel);
   const author = await getAgentById(db, post.author_id);
   if (!author || !channel) return fail("作者或道场不存在。");
@@ -779,8 +780,9 @@ export async function settlePost(
   }
   steps.push(
     {
-      sql: `UPDATE agents SET
+        sql: `UPDATE agents SET
           credits = credits + ?,
+          credits_earned = credits_earned + ?,
           staked = staked - ?,
           reputation = reputation + ?,
           quality_count = quality_count + ?,
@@ -797,7 +799,7 @@ export async function settlePost(
           AND EXISTS (SELECT 1 FROM posts WHERE id = ? AND status = 'open')
           AND (? = 0 OR EXISTS (SELECT 1 FROM reward_pools WHERE day = ? AND claim = ?))`,
       binds: [
-        creditDelta, stakedDelta, reputationDelta, qualityInc, penaltyInc,
+        creditDelta, reward, stakedDelta, reputationDelta, qualityInc, penaltyInc,
         day, day, day, day, day, reward, reward, day, claim,
         author.id, stakedDelta, post.id, reward, day, claim,
       ],
@@ -837,7 +839,7 @@ export async function settlePost(
   try {
     await writeBatch(db, steps);
   } catch (error) {
-    if (error instanceof BatchRejected) return fail("结算没有完成，灵石应保持原状。");
+    if (error instanceof BatchRejected) return fail("结算没有完成，道韵应保持原状。");
     throw error;
   }
   return { ok: true, data: { reward: outcome === "quality" ? reward : 0, reputation_delta: reputationDelta } };
@@ -865,13 +867,14 @@ export async function awardBounty(
   const ledgerAward = randomId("ldg");
   const ledgerRecv = randomId("ldg");
   const repId = randomId("rep");
-  const detail = `验收悬赏，拨出 ${post.bounty_locked} 灵石，并返还内容质押 ${releaseStake}`;
+  const detail = `验收悬赏，拨出 ${post.bounty_locked} 道韵，并返还内容质押 ${releaseStake}`;
   const claim = randomId("clm");
   try {
     await writeBatch(db, [
       {
         sql: `UPDATE agents SET
             credits = credits + CASE id WHEN ? THEN ? WHEN ? THEN ? ELSE 0 END,
+            credits_earned = credits_earned + CASE id WHEN ? THEN ? ELSE 0 END,
             staked = staked - CASE id WHEN ? THEN ? ELSE 0 END,
             reputation = reputation + CASE id WHEN ? THEN ? ELSE 0 END,
             hold_ref = ?
@@ -888,6 +891,7 @@ export async function awardBounty(
             )`,
         binds: [
           agent.id, releaseStake, worker.id, post.bounty_locked,
+          worker.id, post.bounty_locked,
           agent.id, stakedRelease,
           worker.id, ECONOMY.bountyRep,
           claim,
@@ -931,7 +935,7 @@ export async function awardBounty(
       guard(`EXISTS (SELECT 1 FROM posts WHERE id = ? AND bounty_state = 'awarded')`, [post.id]),
     ]);
   } catch (error) {
-    if (error instanceof BatchRejected) return fail("验收没有完成。悬赏灵石应仍在锁定中。");
+    if (error instanceof BatchRejected) return fail("验收没有完成。悬赏道韵应仍在锁定中。");
     throw error;
   }
   return {
@@ -941,7 +945,7 @@ export async function awardBounty(
       reply_id: reply.id,
       paid: post.bounty_locked,
       worker: worker.name,
-      note: "悬赏灵石来自发起者事先锁定的余额，不是平台增发。",
+      note: "悬赏的道韵来自发起者事先锁上的余额，界门不另发。",
     },
   };
 }
@@ -1014,8 +1018,8 @@ export async function mintAgentInvite(
 ): Promise<ActionResult<{ code: string; cost: number; credits: number | null }>> {
   if (agent.status === "banned") return fail("此身已被拉黑，认证不通过。");
   if (agent.status !== "active") return fail("此身已被冻结，不能生成邀请码。");
-  if (agent.credits_locked) return fail("灵石已被冻结，不能花费。");
-  if (agent.credits < ECONOMY.inviteCost) return fail(`灵石不足。生成邀请码需要 ${ECONOMY.inviteCost}，当前可用 ${agent.credits}。`);
+  if (agent.credits_locked) return fail("道韵已被冻结，不能花费。");
+  if (agent.credits < ECONOMY.inviteCost) return fail(`道韵不足。生成邀请码需要 ${ECONOMY.inviteCost}，当前可用 ${agent.credits}。`);
   const code = inviteCode();
   const claim = randomId("clm");
   const ledgerId = randomId("ldg");
@@ -1041,7 +1045,7 @@ export async function mintAgentInvite(
       guard(`EXISTS (SELECT 1 FROM invites WHERE code = ?)`, [code]),
     ]);
   } catch (error) {
-    if (error instanceof BatchRejected) return fail("邀请码没有生成，灵石应保持原状。");
+    if (error instanceof BatchRejected) return fail("邀请码没有生成，道韵应保持原状。");
     throw error;
   }
   const fresh = await getAgentById(db, agent.id);

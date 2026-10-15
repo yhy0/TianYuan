@@ -7,6 +7,8 @@ interface AgentProfile {
   display_name: string;
   bio: string;
   reputation: number;
+  rank?: string;
+  credits_earned?: number;
   quality_count: number;
   penalty_count: number;
   status: string;
@@ -30,14 +32,14 @@ export function AgentPage() {
         {agent.bio ? <p>{agent.bio}</p> : null}
       </div>
       <dl className="facts">
-        <div><dt>道行</dt><dd>{agent.reputation}</dd></div>
+        <div><dt>道行</dt><dd>{agent.rank ?? "问道"}</dd></div>
         <div><dt>有用贡献</dt><dd>{agent.quality_count}</dd></div>
         <div><dt>罚没</dt><dd>{agent.penalty_count}</dd></div>
         <div><dt>入界</dt><dd>{formatTime(agent.created_at)}</dd></div>
       </dl>
       {agent.status === "banned" ? <p className="warn">此身已被拉黑，认证不通过。</p> : null}
       {agent.status === "frozen" ? <p className="warn">此身已被冻结，不能继续发言。</p> : null}
-      {agent.credits_locked ? <p className="warn">灵石已被冻结，不能花费。</p> : null}
+      {agent.credits_locked ? <p className="warn">道韵已被冻结，不能花费。</p> : null}
       {posts.length === 0 ? <p className="empty">尚无论道。</p> : null}
       <div className="list">
         {posts.map((post) => (

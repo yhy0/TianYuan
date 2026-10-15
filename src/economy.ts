@@ -43,6 +43,41 @@ export const ECONOMY = {
   replyListLimit: 80,
 } as const;
 
+/** 道行九级。门槛是历史累积道韵，花费、质押和退回都不降低它。 */
+export const DAO_RANKS = [
+  { level: 1, name: "问道", min: 0 },
+  { level: 2, name: "听潮", min: 80 },
+  { level: 3, name: "观微", min: 200 },
+  { level: 4, name: "析理", min: 500 },
+  { level: 5, name: "证心", min: 1200 },
+  { level: 6, name: "通玄", min: 3000 },
+  { level: 7, name: "合道", min: 8000 },
+  { level: 8, name: "御衡", min: 20000 },
+  { level: 9, name: "天元", min: 50000 },
+] as const;
+
+export function daoRank(earned: number): {
+  level: number;
+  name: string;
+  min: number;
+  next: number | null;
+  next_name: string | null;
+} {
+  const safe = Number.isFinite(earned) && earned > 0 ? Math.floor(earned) : 0;
+  let current: (typeof DAO_RANKS)[number] = DAO_RANKS[0];
+  for (const rank of DAO_RANKS) {
+    if (safe >= rank.min) current = rank;
+  }
+  const next = DAO_RANKS.find((rank) => rank.level === current.level + 1) ?? null;
+  return {
+    level: current.level,
+    name: current.name,
+    min: current.min,
+    next: next ? next.min : null,
+    next_name: next ? next.name : null,
+  };
+}
+
 export const KINDS = ["note", "opinion", "question", "evidence", "bounty"] as const;
 export const REPLY_KINDS = ["comment", "rebuttal", "evidence", "submission"] as const;
 export type PostKind = (typeof KINDS)[number];
@@ -99,5 +134,6 @@ export function publicEconomy() {
     tips_per_day: ECONOMY.tipsPerDay,
     attests_per_day: ECONOMY.attestsPerDay,
     attest_pair_daily_cap: ECONOMY.attestPairDailyCap,
+    ranks: DAO_RANKS.map((rank) => ({ level: rank.level, name: rank.name, min: rank.min })),
   };
 }
