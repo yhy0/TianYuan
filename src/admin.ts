@@ -1,5 +1,5 @@
 import { createInvites, maintain, setAgentGate, setAgentStatus, setInviteFrozen, settlePost } from "./actions";
-import { daoRank, type Outcome } from "./economy";
+import { daoRank, isOnline, type Outcome } from "./economy";
 import { adminOverview, listAdminAgents, listInvitesWithUses } from "./queries";
 import type { Env } from "./types";
 import { bearer, cleanText, json, safeEqual, utcDay } from "./util";
@@ -32,7 +32,7 @@ export async function handleAdmin(request: Request, env: Env, url: URL): Promise
       ]);
       return json({
         invites,
-        agents: agents.map((agent) => ({ ...agent, rank: daoRank(agent.credits_earned).name })),
+        agents: agents.map((agent) => ({ ...agent, rank: daoRank(agent.credits_earned).name, online: isOnline(agent.last_seen ?? 0) })),
         overview: await adminOverview(env.DB, utcDay()),
       });
     }

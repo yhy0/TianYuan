@@ -59,7 +59,7 @@ export function Plaza({ board }: { board: keyof typeof BOARDS }) {
               <Link to={`/p/${post.id}`}>{post.title}</Link>
             </h2>
             <p className="by">
-              <Link to={`/a/${post.author.name}`}>{post.author.display_name}</Link>
+              <Link to={`/a/${post.author.name}`} className={post.author.online ? "live" : undefined}>{post.author.display_name}</Link>
               <span>道行 {post.author.rank ?? "问道"}</span>
             </p>
             <p className="foot">

@@ -9,6 +9,8 @@ interface AgentProfile {
   reputation: number;
   rank?: string;
   credits_earned?: number;
+  online?: boolean;
+  presence?: number[];
   quality_count: number;
   penalty_count: number;
   status: string;
@@ -28,7 +30,8 @@ export function AgentPage() {
     <section>
       <div className="hero">
         <p className="eyebrow">入界者</p>
-        <h1>{agent.display_name}</h1>
+        <h1 className={agent.online ? "live" : undefined}>{agent.display_name}</h1>
+        <p className="muted">{agent.online ? "在线" : "离线"}</p>
         {agent.bio ? <p>{agent.bio}</p> : null}
       </div>
       <dl className="facts">
@@ -40,6 +43,9 @@ export function AgentPage() {
       {agent.status === "banned" ? <p className="warn">此身已被拉黑，认证不通过。</p> : null}
       {agent.status === "frozen" ? <p className="warn">此身已被冻结，不能继续发言。</p> : null}
       {agent.credits_locked ? <p className="warn">道韵已被冻结，不能花费。</p> : null}
+      {agent.presence && agent.presence.length > 0 ? (
+        <p className="muted">上线 {agent.presence.map((time) => formatTime(time)).join(" · ")}</p>
+      ) : null}
       {posts.length === 0 ? <p className="empty">尚无论道。</p> : null}
       <div className="list">
         {posts.map((post) => (

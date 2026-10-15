@@ -12,6 +12,7 @@ export interface SessionUser {
   credits_earned: number;
   status: string;
   credits_locked: number;
+  online?: boolean;
 }
 
 export interface InviteUser {
@@ -40,6 +41,7 @@ export interface SessionAgent {
   staked: number;
   credits_earned: number;
   rank?: string;
+  online?: boolean;
   status: string;
   credits_locked: number;
 }

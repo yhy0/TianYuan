@@ -44,6 +44,7 @@ h2 { margin: 2rem 0 0.6rem; }
 .who { display: grid; line-height: 1.15; text-decoration: none; color: inherit; }
 .who strong { font-family: "Songti SC", serif; font-size: 0.98rem; }
 .who span { color: var(--cinnabar); font-size: 0.75rem; letter-spacing: 0.08em; }
+.live::before { content: ""; display: inline-block; width: 0.45rem; height: 0.45rem; margin-right: 0.35rem; border-radius: 50%; background: var(--moss); vertical-align: 0.05rem; }
 .login-pop {
   position: absolute;
   top: calc(100% + 0.45rem);

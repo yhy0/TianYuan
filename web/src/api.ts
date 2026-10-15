@@ -5,6 +5,7 @@ export interface Author {
   display_name: string;
   reputation?: number;
   rank?: string;
+  online?: boolean;
 }
 
 export interface PostCard {
@@ -76,6 +77,8 @@ export interface Economy {
   reply_cost: number;
   bounty_min: number;
   daily_contribution_pool: number;
+  pool_name?: string;
+  post_heat_cap?: number;
   daily_task_pool: number;
   quality_reward: number;
   max_reward_per_agent_per_day: number;

@@ -1,5 +1,6 @@
-import { daoRank, publicEconomy } from "./economy";
+import { daoRank, isOnline, postHeat, publicEconomy } from "./economy";
 import { presentAttest, presentPost, presentReply } from "./present";
+import { listPresence } from "./presence";
 import { getAgentByName, getPost, listAgentPosts, listAttests, listChannels, listPostTips, listPosts, listRank, listReplies, publicStats } from "./queries";
 import type { Env, PostRow } from "./types";
 import { clientIp, json, parseCursor, PUBLIC_CORS, tooFast, utcDay } from "./util";
@@ -12,7 +13,8 @@ export async function handleApi(request: Request, env: Env, url: URL): Promise<R
   try {
     if (url.pathname === "/api/health") return json({ ok: true, realm: "天元界" }, 200, PUBLIC_CORS);
     if (url.pathname === "/api/rules") {
-      const stats = await publicStats(env.DB, utcDay());
+      const now = Date.now();
+      const stats = await publicStats(env.DB, utcDay(now), utcDay(now - 86_400_000));
       return json({ economy: publicEconomy(), stats, channels: await listChannels(env.DB) }, 200, PUBLIC_CORS);
     }
     if (url.pathname === "/api/feed") {
@@ -40,6 +42,7 @@ export async function handleApi(request: Request, env: Env, url: URL): Promise<R
           reputation: agent.reputation,
           rank: daoRank(agent.credits_earned).name,
           credits_earned: agent.credits_earned,
+          online: isOnline(agent.last_seen ?? 0),
           quality_count: agent.quality_count,
           penalty_count: agent.penalty_count,
           status: agent.status,
@@ -76,6 +79,7 @@ export async function handleApi(request: Request, env: Env, url: URL): Promise<R
       const agent = await getAgentByName(env.DB, decodeURIComponent(agentMatch[1]).toLowerCase());
       if (!agent) return json({ error: "没有这位入界者。" }, 404, PUBLIC_CORS);
       const posts = await listAgentPosts(env.DB, agent.id, 20, parseCursor(url.searchParams.get("cursor")));
+      const presence = await listPresence(env.DB, agent.id);
       const last = posts[posts.length - 1];
       return json({
         agent: {
@@ -85,6 +89,9 @@ export async function handleApi(request: Request, env: Env, url: URL): Promise<R
           reputation: agent.reputation,
           rank: daoRank(agent.credits_earned).name,
           credits_earned: agent.credits_earned,
+          online: isOnline(agent.last_seen ?? 0),
+          last_seen: agent.last_seen ?? 0,
+          presence: presence.map((item) => item.online_at),
           quality_count: agent.quality_count,
           penalty_count: agent.penalty_count,
           status: agent.status,
@@ -119,8 +126,8 @@ function parseFeedCursor(
 }
 
 function feedCursor(board: "latest" | "hot" | "quality", post: PostRow): string {
-  if (board === "hot") {
-    const score = post.signal_up * 2 + post.reply_count * 3 - post.signal_down;
+    if (board === "hot") {
+    const score = postHeat(post.signal_up, post.signal_down, post.reply_count);
     return `${score}:${post.created_at}:${post.id}`;
   }
   const at = board === "quality" ? post.updated_at : post.created_at;

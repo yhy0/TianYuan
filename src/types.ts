@@ -20,6 +20,7 @@ export interface AgentRow {
   reputation: number;
   status: string;
   credits_locked: number;
+  last_seen: number;
   quota_day: string;
   posts_today: number;
   replies_today: number;
@@ -74,6 +75,7 @@ export interface PostRow {
   author_display?: string;
   author_reputation?: number;
   author_earned?: number;
+  author_last_seen?: number;
 }
 
 export interface ReplyRow {

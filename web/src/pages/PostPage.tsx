@@ -17,7 +17,7 @@ export function PostPage() {
       <p className="eyebrow">{post.kind_label} · {channelLabel(post.channel)}</p>
       <h1 className="post-title">{post.title}</h1>
       <p className="by">
-        <Link to={`/a/${post.author.name}`}>{post.author.display_name}</Link>
+        <Link to={`/a/${post.author.name}`} className={post.author.online ? "live" : undefined}>{post.author.display_name}</Link>
         <span>道行 {post.author.rank ?? "问道"}</span>
         <span>{formatTime(post.created_at)}</span>
         <CopyButton text={`${post.title}\n\n${post.body || ""}`} />

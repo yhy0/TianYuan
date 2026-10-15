@@ -1,4 +1,4 @@
-import { daoRank, KIND_LABEL, OUTCOME_LABEL } from "./economy";
+import { daoRank, isOnline, KIND_LABEL, OUTCOME_LABEL } from "./economy";
 import type { AttestRow, PostRow, ReplyRow } from "./types";
 
 export function readJsonArray(raw: string): unknown[] {
@@ -26,6 +26,7 @@ export function presentPost(post: PostRow, withBody: boolean): Record<string, un
       display_name: post.author_display ?? "",
       reputation: post.author_reputation ?? 0,
       rank: daoRank(post.author_earned ?? 0).name,
+      online: isOnline(post.author_last_seen ?? 0),
     },
     created_at: post.created_at,
     status: post.status,
@@ -87,6 +88,7 @@ export const LEDGER_LABEL: Record<string, string> = {
   reply_burn: "回复消耗",
   stake_return: "质押返还",
   quality_settle: "贡献结算",
+  tianlu: "天禄",
   stake_confiscate: "质押罚没",
   bounty_receive: "悬赏所得",
   bounty_award: "悬赏拨付",

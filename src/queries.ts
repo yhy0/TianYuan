@@ -6,13 +6,13 @@ const POST_FIELDS = `
   p.burn, p.stake, p.bounty_locked, p.bounty_state, p.status, p.outcome, p.suspect,
   p.settle_note, p.upvotes, p.downvotes, p.signal_up, p.signal_down, p.reply_count,
   p.created_at, p.updated_at, p.settle_after,
-  a.name AS author_name, a.display_name AS author_display, a.reputation AS author_reputation, a.credits_earned AS author_earned
+  a.name AS author_name, a.display_name AS author_display, a.reputation AS author_reputation, a.credits_earned AS author_earned, a.last_seen AS author_last_seen
 `;
 
 export function getAgentByToken(db: D1Database, tokenHash: string): Promise<AgentRow | null> {
   return runFirst<AgentRow>(
     db,
-    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, credits_earned, staked, reputation, status, credits_locked,
+    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, credits_earned, staked, reputation, status, credits_locked, last_seen,
             quota_day, posts_today, replies_today, votes_today, attests_today, rewards_today,
             quality_count, penalty_count, created_at
      FROM agents WHERE token_hash = ?`,
@@ -23,7 +23,7 @@ export function getAgentByToken(db: D1Database, tokenHash: string): Promise<Agen
 export function getAgentByName(db: D1Database, name: string): Promise<AgentRow | null> {
   return runFirst<AgentRow>(
     db,
-    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, credits_earned, staked, reputation, status, credits_locked,
+    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, credits_earned, staked, reputation, status, credits_locked, last_seen,
             quota_day, posts_today, replies_today, votes_today, attests_today, rewards_today,
             quality_count, penalty_count, created_at
      FROM agents WHERE name = ?`,
@@ -34,7 +34,7 @@ export function getAgentByName(db: D1Database, name: string): Promise<AgentRow |
 export function getAgentById(db: D1Database, id: string): Promise<AgentRow | null> {
   return runFirst<AgentRow>(
     db,
-    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, credits_earned, staked, reputation, status, credits_locked,
+    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, credits_earned, staked, reputation, status, credits_locked, last_seen,
             quota_day, posts_today, replies_today, votes_today, attests_today, rewards_today,
             quality_count, penalty_count, created_at
      FROM agents WHERE id = ?`,
@@ -66,7 +66,7 @@ export function getPost(db: D1Database, id: string): Promise<PostRow | null> {
   return runFirst<PostRow>(db, `SELECT ${POST_FIELDS} FROM posts p JOIN agents a ON a.id = p.author_id WHERE p.id = ?`, [id]);
 }
 
-const HOT_SCORE = "(p.signal_up * 2 + p.reply_count * 3 - p.signal_down)";
+const HOT_SCORE = "MAX(0, MIN(12, 2 + p.signal_up * 2 + MIN(p.reply_count, 8) - p.signal_down))";
 
 export async function listPosts(
   db: D1Database,
@@ -234,7 +234,7 @@ export function listReputation(db: D1Database, agentId: string, limit: number): 
 export function listRank(db: D1Database, limit: number): Promise<AgentRow[]> {
   return run<AgentRow>(
     db,
-    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, credits_earned, staked, reputation, status, credits_locked,
+    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, credits_earned, staked, reputation, status, credits_locked, last_seen,
             quota_day, posts_today, replies_today, votes_today, attests_today, rewards_today,
             quality_count, penalty_count, created_at
      FROM agents
@@ -325,26 +325,28 @@ export interface PoolRow {
   contribution_remaining: number;
   task_pool: number;
   task_remaining: number;
+  distributed: number;
 }
 
 export function getPool(db: D1Database, day: string): Promise<PoolRow | null> {
   return runFirst<PoolRow>(
     db,
-    `SELECT day, contribution_pool, contribution_remaining, task_pool, task_remaining FROM reward_pools WHERE day = ?`,
+    `SELECT day, contribution_pool, contribution_remaining, task_pool, task_remaining, distributed FROM reward_pools WHERE day = ?`,
     [day],
   );
 }
 
-export async function publicStats(db: D1Database, day: string): Promise<{ agents: number; posts: number; pool_remaining: number | null }> {
-  const row = await runFirst<{ agents: number; posts: number; pool_remaining: number | null }>(
+export async function publicStats(db: D1Database, day: string, yesterday: string): Promise<{ agents: number; posts: number; pool_remaining: number | null; yesterday_paid: number | null }> {
+  const row = await runFirst<{ agents: number; posts: number; pool_remaining: number | null; yesterday_paid: number | null }>(
     db,
     `SELECT
        (SELECT COUNT(*) FROM agents) AS agents,
        (SELECT COUNT(*) FROM posts) AS posts,
-       (SELECT contribution_remaining FROM reward_pools WHERE day = ?) AS pool_remaining`,
-    [day],
+       (SELECT contribution_remaining FROM reward_pools WHERE day = ?) AS pool_remaining,
+       (SELECT CASE WHEN distributed = 1 THEN contribution_pool - contribution_remaining ELSE NULL END FROM reward_pools WHERE day = ?) AS yesterday_paid`,
+    [day, yesterday],
   );
-  return row ?? { agents: 0, posts: 0, pool_remaining: null };
+  return row ?? { agents: 0, posts: 0, pool_remaining: null, yesterday_paid: null };
 }
 
 export interface AdminInviteRow {
@@ -375,6 +377,7 @@ export interface AdminAgentRow {
   reputation: number;
   status: string;
   credits_locked: number;
+  last_seen: number;
   created_at: number;
 }
 
@@ -425,7 +428,7 @@ export function listAdminUses(db: D1Database, issuerId?: string | null): Promise
 export function listAdminAgents(db: D1Database): Promise<AdminAgentRow[]> {
   return run<AdminAgentRow>(
     db,
-    `SELECT name, display_name, credits, credits_earned, staked, reputation, status, credits_locked, created_at
+    `SELECT name, display_name, credits, credits_earned, staked, reputation, status, credits_locked, last_seen, created_at
      FROM agents
      ORDER BY created_at DESC
      LIMIT 200`,

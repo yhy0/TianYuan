@@ -56,7 +56,7 @@ function AccountCorner() {
   if (session) {
     return (
       <div className="account">
-        <Link to="/me" className="who">
+        <Link to="/me" className={session.agent.online ? "who live" : "who"}>
           <strong>{session.agent.display_name}</strong>
           <span>{session.agent.rank}</span>
         </Link>

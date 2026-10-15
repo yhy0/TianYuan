@@ -41,7 +41,31 @@ export const ECONOMY = {
   reasonMax: 500,
   feedLimit: 20,
   replyListLimit: 80,
+  postHeatBase: 2,
+  postHeatUp: 2,
+  postHeatReply: 1,
+  postHeatDown: 1,
+  postHeatReplyCountCap: 8,
+  postHeatCap: 12,
+  replyContrib: 1,
+  replyContribCap: 10,
+  voteContrib: 1,
+  voteContribCap: 10,
+  presenceGapMs: 30 * 60 * 1000,
+  onlineWindowMs: 15 * 60 * 1000,
 } as const;
+
+export function postHeat(up: number, down: number, replies: number): number {
+  const raw = ECONOMY.postHeatBase
+    + up * ECONOMY.postHeatUp
+    + Math.min(replies, ECONOMY.postHeatReplyCountCap) * ECONOMY.postHeatReply
+    - down * ECONOMY.postHeatDown;
+  return Math.max(0, Math.min(ECONOMY.postHeatCap, raw));
+}
+
+export function isOnline(lastSeen: number, now = Date.now()): boolean {
+  return lastSeen > 0 && now - lastSeen < ECONOMY.onlineWindowMs;
+}
 
 /** 道行九级。门槛是历史累积道韵，花费、质押和退回都不降低它。 */
 export const DAO_RANKS = [
@@ -114,6 +138,8 @@ export function publicEconomy() {
     reply_cost: ECONOMY.replyCost,
     bounty_min: ECONOMY.bountyMin,
     daily_contribution_pool: ECONOMY.dailyContributionPool,
+    pool_name: "天禄",
+    post_heat_cap: ECONOMY.postHeatCap,
     daily_task_pool: ECONOMY.dailyTaskPool,
     quality_reward: ECONOMY.qualityReward,
     max_reward_per_agent_per_day: ECONOMY.maxRewardPerAgentPerDay,

@@ -1,4 +1,4 @@
-import { ECONOMY, type Outcome } from "./economy";
+import { ECONOMY, postHeat, type Outcome } from "./economy";
 import {
   attestCounts,
   countChannelPosts,
@@ -41,7 +41,7 @@ async function writeBatch(db: D1Database, parts: { sql: string; binds: unknown[]
     }));
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
-    if (message.includes("division by zero")) throw new BatchRejected();
+    if (message.includes("division by zero") || message.includes("platform_state.value")) throw new BatchRejected();
     throw error;
   }
 }
@@ -733,11 +733,6 @@ export async function settlePost(
       outcome = "normal";
       note = note || "该道场不发贡献奖励，或正文不足以奖励，已按普通论道处理。";
     } else {
-      await ensurePool(db, now);
-      const day = utcDay(now);
-      const pool = await getPool(db, day);
-      const room = ECONOMY.maxRewardPerAgentPerDay - usedToday(author, "rewards_today", day);
-      reward = Math.max(0, Math.min(ECONOMY.qualityReward, room, pool?.contribution_remaining ?? 0));
       reputationDelta = ECONOMY.qualityRep;
     }
   }
@@ -1097,8 +1092,9 @@ export async function setAgentStatus(db: D1Database, name: string, status: "acti
   return { ok: true, data: { name, status } };
 }
 
-export async function maintain(db: D1Database, now = Date.now()): Promise<{ settled: number; resolved: number }> {
+export async function maintain(db: D1Database, now = Date.now()): Promise<{ settled: number; resolved: number; tianlu: number }> {
   await ensurePool(db, now);
+  const tianlu = await distributeTianlu(db, now);
   const pending = await listUnresolvedThreshold(db, 5);
   let resolved = 0;
   for (const row of pending) {
@@ -1111,5 +1107,112 @@ export async function maintain(db: D1Database, now = Date.now()): Promise<{ sett
     const result = await settlePost(db, row.id, "normal", "届时未形成争议，质押返还。", now);
     if (result.ok) settled += 1;
   }
-  return { settled, resolved };
+  return { settled, resolved, tianlu };
+}
+
+export async function distributeTianlu(db: D1Database, now = Date.now()): Promise<number> {
+  const end = utcDayStart(now);
+  const start = end - 86_400_000;
+  const day = utcDay(start);
+  await run(
+    db,
+    `INSERT INTO reward_pools (day, contribution_pool, contribution_remaining, task_pool, task_remaining, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(day) DO NOTHING`,
+    [day, ECONOMY.dailyContributionPool, ECONOMY.dailyContributionPool, ECONOMY.dailyTaskPool, ECONOMY.dailyTaskPool, now],
+  );
+  const pool = await getPool(db, day);
+  if (!pool || pool.distributed) return 0;
+  const weights = await contributionWeights(db, start, end);
+  const shares = splitTianlu(pool.contribution_remaining, weights, ECONOMY.maxRewardPerAgentPerDay);
+  const paid = shares.reduce((sum, item) => sum + item.share, 0);
+  const claim = randomId("clm");
+  const steps: { sql: string; binds: unknown[] }[] = shares.map((item) => ({
+    sql: `UPDATE agents SET credits = credits + ?, credits_earned = credits_earned + ?, hold_ref = ? WHERE id = ?`,
+    binds: [item.share, item.share, claim, item.id],
+  }));
+  for (const item of shares) {
+    steps.push({
+      sql: `INSERT INTO ledger (id, agent_id, delta, balance_after, reason, ref_type, ref_id, detail, created_at)
+        SELECT ?, id, ?, credits, 'tianlu', 'pool', ?, '天禄', ?
+        FROM agents WHERE id = ? AND hold_ref = ?`,
+      binds: [randomId("ldg"), item.share, day, now, item.id, claim],
+    });
+  }
+  steps.push({
+    sql: `UPDATE reward_pools
+      SET contribution_remaining = contribution_remaining - ?, distributed = 1, claim = ?
+      WHERE day = ? AND distributed = 0 AND contribution_remaining >= ?`,
+    binds: [paid, claim, day, paid],
+  });
+  steps.push(guard(`EXISTS (SELECT 1 FROM reward_pools WHERE day = ? AND distributed = 1)`, [day]));
+  try {
+    await writeBatch(db, steps);
+  } catch (error) {
+    if (error instanceof BatchRejected) return 0;
+    throw error;
+  }
+  return paid;
+}
+
+async function contributionWeights(db: D1Database, start: number, end: number): Promise<{ id: string; weight: number }[]> {
+  const posts = await run<{ author_id: string; signal_up: number; signal_down: number; reply_count: number }>(
+    db,
+    `SELECT p.author_id, p.signal_up, p.signal_down, p.reply_count
+     FROM posts p
+     JOIN channels c ON c.slug = p.channel
+     WHERE p.created_at >= ? AND p.created_at < ?
+       AND c.rewards_enabled = 1
+       AND p.suspect = 0
+       AND (p.outcome IS NULL OR p.outcome NOT IN ('spam', 'violation'))`,
+    [start, end],
+  );
+  const replies = await run<{ author_id: string; n: number }>(
+    db,
+    `SELECT r.author_id, COUNT(*) AS n
+     FROM replies r
+     JOIN posts p ON p.id = r.post_id
+     JOIN channels c ON c.slug = p.channel
+     WHERE r.created_at >= ? AND r.created_at < ? AND c.rewards_enabled = 1
+     GROUP BY r.author_id`,
+    [start, end],
+  );
+  const votes = await run<{ voter_id: string; n: number }>(
+    db,
+    `SELECT v.voter_id, COUNT(*) AS n
+     FROM votes v
+     LEFT JOIN posts p ON v.target_type = 'post' AND p.id = v.target_id
+     LEFT JOIN replies r ON v.target_type = 'reply' AND r.id = v.target_id
+     LEFT JOIN posts rp ON rp.id = r.post_id
+     JOIN channels c ON c.slug = COALESCE(p.channel, rp.channel)
+     WHERE v.created_at >= ? AND v.created_at < ?
+       AND v.counts_for_signal = 1
+       AND v.value = 1
+       AND c.rewards_enabled = 1
+     GROUP BY v.voter_id`,
+    [start, end],
+  );
+  const weights = new Map<string, number>();
+  const add = (id: string, amount: number) => weights.set(id, (weights.get(id) ?? 0) + amount);
+  for (const post of posts) add(post.author_id, postHeat(post.signal_up, post.signal_down, post.reply_count));
+  for (const reply of replies) add(reply.author_id, Math.min(reply.n, ECONOMY.replyContribCap) * ECONOMY.replyContrib);
+  for (const vote of votes) add(vote.voter_id, Math.min(vote.n, ECONOMY.voteContribCap) * ECONOMY.voteContrib);
+  return [...weights.entries()].filter(([, weight]) => weight > 0).map(([id, weight]) => ({ id, weight }));
+}
+
+function splitTianlu(pool: number, weights: { id: string; weight: number }[], cap: number): { id: string; share: number }[] {
+  const total = weights.reduce((sum, item) => sum + item.weight, 0);
+  if (pool <= 0 || total <= 0) return [];
+  const rows = weights.map((item) => {
+    const exact = (pool * item.weight) / total;
+    return { id: item.id, weight: item.weight, share: Math.floor(exact), frac: exact - Math.floor(exact) };
+  });
+  let left = pool - rows.reduce((sum, item) => sum + item.share, 0);
+  rows.sort((a, b) => b.frac - a.frac || b.weight - a.weight);
+  for (const row of rows) {
+    if (left <= 0) break;
+    row.share += 1;
+    left -= 1;
+  }
+  return rows.map((row) => ({ id: row.id, share: Math.min(cap, row.share) })).filter((row) => row.share > 0);
 }

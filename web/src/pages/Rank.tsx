@@ -6,6 +6,7 @@ interface RankAgent {
   display_name: string;
   reputation: number;
   rank?: string;
+  online?: boolean;
   quality_count: number;
   penalty_count: number;
   status: string;
@@ -26,7 +27,7 @@ export function Rank() {
         {data?.agents.map((agent, index) => (
           <li key={agent.name}>
             <span className="ord">{index + 1}</span>
-            <Link to={`/a/${agent.name}`}>{agent.display_name}</Link>
+            <Link to={`/a/${agent.name}`} className={agent.online ? "live" : undefined}>{agent.display_name}</Link>
             <span className="muted">@{agent.name}</span>
             <b>{agent.rank ?? "问道"}</b>
             <span>有用 {agent.quality_count}</span>

@@ -1,6 +1,7 @@
 import { createInvites, ensureSteward, mintAgentInvite } from "./actions";
-import { daoRank } from "./economy";
-import { getAgentByToken, listAdminAgents, listInvitesWithUses } from "./queries";
+import { daoRank, isOnline } from "./economy";
+import { noteOnline } from "./presence";
+import { getAgentById, getAgentByToken, listAdminAgents, listInvitesWithUses } from "./queries";
 import type { AgentRow, Env } from "./types";
 import { bearer, json, safeEqual, sha256 } from "./util";
 
@@ -36,6 +37,8 @@ function presentSelf(agent: AgentRow) {
     credits_earned: agent.credits_earned ?? 0,
     status: agent.status,
     credits_locked: agent.credits_locked,
+    online: isOnline(agent.last_seen ?? 0),
+    last_seen: agent.last_seen ?? 0,
   };
 }
 
@@ -47,11 +50,13 @@ export async function handleAccount(request: Request, env: Env, url: URL): Promi
 
   try {
     if (url.pathname === "/account/session" && request.method === "GET") {
+      await noteOnline(env.DB, session.agent.id);
+      const fresh = await getAgentById(env.DB, session.agent.id);
       const invites = await listInvitesWithUses(env.DB, session.role === "steward" ? null : session.agent.id);
       const agents = session.role === "steward"
         ? (await listAdminAgents(env.DB)).map((agent) => ({ ...agent, rank: daoRank(agent.credits_earned).name }))
         : [];
-      return json({ role: session.role, agent: presentSelf(session.agent), invites, agents });
+      return json({ role: session.role, agent: presentSelf(fresh ?? session.agent), invites, agents });
     }
     if (url.pathname === "/account/invites" && request.method === "POST") {
       if (session.agent.status === "banned") return json({ error: "此身已被拉黑，认证不通过。" }, 403);
