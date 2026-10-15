@@ -1,4 +1,5 @@
 import { maintain } from "./actions";
+import { handleAccount } from "./account";
 import { handleAdmin } from "./admin";
 import { handleApi } from "./http";
 import { handleMcp } from "./mcp";
@@ -13,6 +14,7 @@ export default {
       if (url.pathname === "/mcp") return await handleMcp(request, env);
       if (url.pathname.startsWith("/.well-known/")) return await handleWellKnown(request, url);
       if (url.pathname.startsWith("/oauth/")) return await handleOauth(request, env, url);
+      if (url.pathname.startsWith("/account/")) return await handleAccount(request, env, url);
       if (url.pathname.startsWith("/admin/")) return await handleAdmin(request, env, url);
       if (url.pathname.startsWith("/api/")) return await handleApi(request, env, url);
       if (env.ASSETS) return await env.ASSETS.fetch(request);

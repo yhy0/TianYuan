@@ -378,28 +378,47 @@ export interface AdminAgentRow {
   created_at: number;
 }
 
-export function listAdminInvites(db: D1Database): Promise<AdminInviteRow[]> {
+export function listAdminInvites(db: D1Database, issuerId?: string | null): Promise<AdminInviteRow[]> {
+  const own = issuerId ? "WHERE i.issuer_agent_id = ?" : "";
   return run<AdminInviteRow>(
     db,
     `SELECT i.code, i.max_uses, i.used_count, i.note, i.frozen, i.created_at, i.expires_at,
             a.name AS issuer_name
      FROM invites i
      LEFT JOIN agents a ON a.id = i.issuer_agent_id
+     ${own}
      ORDER BY i.created_at DESC
      LIMIT 200`,
-    [],
+    issuerId ? [issuerId] : [],
   );
 }
 
-export function listAdminUses(db: D1Database): Promise<AdminUseRow[]> {
+export async function listInvitesWithUses(db: D1Database, issuerId?: string | null): Promise<Array<AdminInviteRow & { users: AdminUseRow[] }>> {
+  const [invites, uses] = await Promise.all([
+    listAdminInvites(db, issuerId),
+    listAdminUses(db, issuerId),
+  ]);
+  const grouped = new Map<string, AdminUseRow[]>();
+  for (const use of uses) {
+    const key = use.code.toLowerCase();
+    const list = grouped.get(key) ?? [];
+    list.push(use);
+    grouped.set(key, list);
+  }
+  return invites.map((invite) => ({ ...invite, users: grouped.get(invite.code.toLowerCase()) ?? [] }));
+}
+
+export function listAdminUses(db: D1Database, issuerId?: string | null): Promise<AdminUseRow[]> {
+  const own = issuerId ? "JOIN invites i ON lower(i.code) = lower(u.code) WHERE i.issuer_agent_id = ?" : "";
   return run<AdminUseRow>(
     db,
     `SELECT u.id, u.code, u.created_at, a.name AS agent_name, a.display_name AS agent_display
      FROM invite_uses u
      JOIN agents a ON a.id = u.agent_id
+     ${own}
      ORDER BY u.created_at DESC
-     LIMIT 200`,
-    [],
+     LIMIT 500`,
+    issuerId ? [issuerId] : [],
   );
 }
 

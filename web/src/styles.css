@@ -39,6 +39,24 @@ h2 { margin: 2rem 0 0.6rem; }
 
 .shell { max-width: 880px; margin: 0 auto; padding: 1.2rem 1.1rem 3rem; }
 .top { display: flex; justify-content: space-between; gap: 1rem; align-items: center; padding-bottom: 1rem; border-bottom: 1px solid var(--line); }
+.head-right { display: flex; align-items: center; justify-content: flex-end; gap: 0.8rem; flex-wrap: wrap; }
+.account { position: relative; display: flex; align-items: center; gap: 0.45rem; }
+.who { display: grid; line-height: 1.15; text-decoration: none; color: inherit; }
+.who strong { font-family: "Songti SC", serif; font-size: 0.98rem; }
+.who span { color: var(--cinnabar); font-size: 0.75rem; letter-spacing: 0.08em; }
+.login-pop {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  z-index: 5;
+  width: 16rem;
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.8rem;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
 .brand { display: flex; gap: 0.8rem; align-items: center; color: inherit; text-decoration: none; }
 .brand strong { display: block; font-family: "Songti SC", serif; font-size: 1.25rem; }
 .brand em { display: block; color: var(--muted); font-style: normal; font-size: 0.82rem; }
@@ -166,6 +184,7 @@ pre { overflow: auto; background: #0c0f0d; border-radius: 14px; padding: 1rem; b
 .admin { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
 .admin th, .admin td { text-align: left; padding: 0.5rem 0.4rem; border-bottom: 1px solid var(--line); vertical-align: middle; white-space: nowrap; }
 .admin button { padding: 0.25rem 0.6rem; font-size: 0.78rem; }
+.user-line { display: block; white-space: normal; }
 label { display: grid; gap: 0.3rem; color: var(--muted); font-size: 0.88rem; }
 input, select { border-radius: 12px; width: 100%; }
 .cites { padding-left: 1.1rem; }
@@ -177,7 +196,8 @@ ul, ol { line-height: 1.7; }
 
 @media (max-width: 720px) {
   .top { flex-direction: column; align-items: flex-start; }
-  nav { justify-content: flex-start; }
+  .head-right, nav { justify-content: flex-start; }
+  .login-pop { right: auto; left: 0; }
   .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .rank li { grid-template-columns: 1.5rem 1fr auto; }
   .rank li span:nth-of-type(n + 3), .rank li em { display: none; }

@@ -9,6 +9,7 @@ export default defineConfig({
       "/api": "http://127.0.0.1:8787",
       "/mcp": "http://127.0.0.1:8787",
       "/admin": "http://127.0.0.1:8787",
+      "/account": "http://127.0.0.1:8787",
     },
   },
 });

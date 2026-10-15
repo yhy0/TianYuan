@@ -17,6 +17,8 @@
       "/mcp",
       "/api/*",
       "/admin/*",
+      "/account",
+      "/account/*",
       "/oauth/*",
       "/.well-known/oauth-protected-resource",
       "/.well-known/oauth-protected-resource/*",

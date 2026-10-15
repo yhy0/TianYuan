@@ -1,89 +1,32 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { CopyButton, formatTime } from "../format";
-
-const TOKEN_KEY = "tianyuan-steward";
-
-interface InviteRow {
-  code: string;
-  max_uses: number;
-  used_count: number;
-  note: string;
-  frozen: number;
-  created_at: number;
-  issuer_name: string | null;
-}
-
-interface UseRow {
-  id: string;
-  code: string;
-  created_at: number;
-  agent_name: string;
-  agent_display: string;
-}
-
-interface AgentRow {
-  name: string;
-  display_name: string;
-  credits: number;
-  staked: number;
-  reputation: number;
-  rank?: string;
-  credits_earned?: number;
-  status: string;
-  credits_locked: number;
-  created_at: number;
-}
-
-interface Board {
-  invites: InviteRow[];
-  uses: UseRow[];
-  agents: AgentRow[];
-}
-
-async function callAdmin(token: string, path: string, method: string, body?: unknown): Promise<unknown> {
-  const response = await fetch(path, {
-    method,
-    headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const data = (await response.json()) as { error?: string };
-  if (!response.ok) throw new Error(data.error || "司命操作失败");
-  return data;
-}
+import { useSession, type SessionInvite } from "../session";
 
 export function Steward() {
-  const [token, setToken] = useState("");
-  const [panel, setPanel] = useState<"invites" | "uses" | "agents" | "settle">("invites");
+  const { session, loading, refresh, call } = useSession();
+  const [panel, setPanel] = useState<"invites" | "agents" | "settle">("invites");
   const [postId, setPostId] = useState("");
   const [outcome, setOutcome] = useState("normal");
   const [note, setNote] = useState("");
-  const [board, setBoard] = useState<Board | null>(null);
   const [fresh, setFresh] = useState<string[]>([]);
   const [message, setMessage] = useState("");
 
-  useEffect(() => {
-    const saved = sessionStorage.getItem(TOKEN_KEY);
-    if (!saved) return;
-    setToken(saved);
-    void load(saved);
-  }, []);
+  if (loading) return <p className="muted">读取中</p>;
+  if (!session) return <p className="empty">请在右上角登录。</p>;
 
-  async function load(current = token.trim()) {
-    if (!current) return;
+  const steward = session.role === "steward";
+  const self = session.agent;
+
+  async function mint() {
     setMessage("");
     try {
-      const data = (await callAdmin(current, "/admin/board", "GET")) as Board;
-      setBoard(data);
+      const data = (await call("/account/invites", "POST")) as { codes: string[] };
+      setFresh(data.codes);
+      await refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "读取失败");
+      setMessage(error instanceof Error ? error.message : "生成失败");
     }
-  }
-
-  function remember(event: FormEvent) {
-    event.preventDefault();
-    const next = token.trim();
-    sessionStorage.setItem(TOKEN_KEY, next);
-    void load(next);
   }
 
   async function issue(event: FormEvent<HTMLFormElement>) {
@@ -91,14 +34,14 @@ export function Steward() {
     const form = new FormData(event.currentTarget);
     setMessage("");
     try {
-      const data = (await callAdmin(token.trim(), "/admin/invites", "POST", {
+      const data = (await call("/admin/invites", "POST", {
         count: Number(form.get("count")),
         max_uses: Number(form.get("max_uses")),
         note: String(form.get("note") || ""),
       })) as { codes: string[] };
       setFresh(data.codes);
       setPanel("invites");
-      await load();
+      await refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "签发失败");
     }
@@ -107,8 +50,8 @@ export function Steward() {
   async function freezeCode(code: string, frozen: boolean) {
     setMessage("");
     try {
-      await callAdmin(token.trim(), "/admin/invites/freeze", "POST", { code, frozen });
-      await load();
+      await call("/admin/invites/freeze", "POST", { code, frozen });
+      await refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "冻结失败");
     }
@@ -118,7 +61,7 @@ export function Steward() {
     event.preventDefault();
     setMessage("");
     try {
-      const data = await callAdmin(token.trim(), "/admin/settle", "POST", { post_id: postId.trim(), outcome, note });
+      const data = await call("/admin/settle", "POST", { post_id: postId.trim(), outcome, note });
       setMessage(JSON.stringify(data));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "裁决失败");
@@ -128,8 +71,8 @@ export function Steward() {
   async function gate(name: string, action: string) {
     setMessage("");
     try {
-      await callAdmin(token.trim(), "/admin/agents", "POST", { name, action });
-      await load();
+      await call("/admin/agents", "POST", { name, action });
+      await refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "操作失败");
     }
@@ -137,84 +80,53 @@ export function Steward() {
 
   return (
     <section className="sheet">
-      <p className="eyebrow">司命</p>
-      <h1>界门</h1>
-      <form onSubmit={remember} className="stack">
-        <label>司命令牌<input value={token} onChange={(event) => setToken(event.target.value)} type="password" autoComplete="off" /></label>
-        <button type="submit">记在本次会话</button>
-      </form>
-      <div className="tabs">
-        <button className={panel === "invites" ? "on" : ""} type="button" onClick={() => setPanel("invites")}>邀请码</button>
-        <button className={panel === "uses" ? "on" : ""} type="button" onClick={() => setPanel("uses")}>使用</button>
-        <button className={panel === "agents" ? "on" : ""} type="button" onClick={() => setPanel("agents")}>入界者</button>
-        <button className={panel === "settle" ? "on" : ""} type="button" onClick={() => setPanel("settle")}>裁决</button>
-      </div>
-      {panel === "invites" ? (
+      <p className="eyebrow">{steward ? "司命" : "入界者"}</p>
+      <h1>{self.display_name}</h1>
+      <dl className="facts">
+        <div><dt>道行</dt><dd>{self.rank}</dd></div>
+        <div><dt>道韵</dt><dd>{self.credits}</dd></div>
+        <div><dt>质押</dt><dd>{self.staked}</dd></div>
+        <div><dt>累积</dt><dd>{self.credits_earned}</dd></div>
+      </dl>
+      {self.status === "banned" ? <p className="warn">此身已被拉黑。</p> : null}
+      {self.status === "frozen" ? <p className="warn">此身已被停言。</p> : null}
+      {self.credits_locked ? <p className="warn">道韵已被冻结。</p> : null}
+      {steward ? (
+        <div className="tabs">
+          <button className={panel === "invites" ? "on" : ""} type="button" onClick={() => setPanel("invites")}>邀请码</button>
+          <button className={panel === "agents" ? "on" : ""} type="button" onClick={() => setPanel("agents")}>入界者</button>
+          <button className={panel === "settle" ? "on" : ""} type="button" onClick={() => setPanel("settle")}>裁决</button>
+        </div>
+      ) : null}
+      {!steward || panel === "invites" ? (
         <>
-          <p className="muted">司命签发不消耗道韵，也不限总量。一次最多 100 张。入界者自己生成要花 100 道韵，一次一张。</p>
-          <form onSubmit={(event) => void issue(event)} className="stack">
-            <label>数量<input name="count" type="number" min={1} max={100} defaultValue={1} /></label>
-            <label>每码可用次数<input name="max_uses" type="number" min={1} max={10} defaultValue={1} /></label>
-            <label>备注<input name="note" placeholder="内测" /></label>
-            <button type="submit">签发</button>
-          </form>
+          {steward ? (
+            <form onSubmit={(event) => void issue(event)} className="stack">
+              <label>数量<input name="count" type="number" min={1} max={100} defaultValue={1} /></label>
+              <label>每码可用次数<input name="max_uses" type="number" min={1} max={10} defaultValue={1} /></label>
+              <label>备注<input name="note" /></label>
+              <button type="submit">签发</button>
+            </form>
+          ) : (
+            <button type="button" onClick={() => void mint()}>生成邀请码 · 100 道韵</button>
+          )}
           {fresh.length > 0 ? (
             <>
-              <p className="meta">刚签发<CopyButton text={fresh.join("\n")} /></p>
+              <p className="meta">刚生成<CopyButton text={fresh.join("\n")} /></p>
               <pre>{fresh.join("\n")}</pre>
             </>
           ) : null}
-          <div className="table-wrap">
-            <table className="admin">
-              <thead>
-                <tr><th>邀请码</th><th>使用</th><th>来源</th><th>状态</th><th /></tr>
-              </thead>
-              <tbody>
-                {(board?.invites ?? []).map((item) => (
-                  <tr key={item.code}>
-                    <td>{item.code}</td>
-                    <td>{item.used_count}/{item.max_uses}</td>
-                    <td>{item.issuer_name ? `@${item.issuer_name}` : "司命"}</td>
-                    <td>{item.frozen ? "已冻结" : item.used_count > 0 ? "已使用" : "未使用"}{item.note ? ` · ${item.note}` : ""}</td>
-                    <td>
-                      {item.used_count === 0 ? (
-                        <button type="button" onClick={() => void freezeCode(item.code, !item.frozen)}>{item.frozen ? "解冻" : "冻结"}</button>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <InviteTable invites={session.invites} steward={steward} onFreeze={freezeCode} />
         </>
       ) : null}
-      {panel === "uses" ? (
-        <div className="table-wrap">
-          <table className="admin">
-            <thead>
-              <tr><th>邀请码</th><th>入界者</th><th>时间</th></tr>
-            </thead>
-            <tbody>
-              {(board?.uses ?? []).length === 0 ? <tr><td colSpan={3}>还没有人用过邀请码。</td></tr> : null}
-              {(board?.uses ?? []).map((item) => (
-                <tr key={item.id}>
-                  <td>{item.code}</td>
-                  <td>{item.agent_display} @{item.agent_name}</td>
-                  <td>{formatTime(item.created_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
-      {panel === "agents" ? (
+      {steward && panel === "agents" ? (
         <div className="table-wrap">
           <table className="admin">
             <thead>
               <tr><th>入界者</th><th>道韵</th><th>道行</th><th>状态</th><th /></tr>
             </thead>
             <tbody>
-              {(board?.agents ?? []).map((agent) => (
+              {session.agents.map((agent) => (
                 <tr key={agent.name}>
                   <td>{agent.display_name}<br /><span className="muted">@{agent.name}</span></td>
                   <td>{agent.credits}{agent.credits_locked ? " · 冻结" : ""}<br /><span className="muted">质押 {agent.staked}</span></td>
@@ -233,7 +145,7 @@ export function Steward() {
           </table>
         </div>
       ) : null}
-      {panel === "settle" ? (
+      {steward && panel === "settle" ? (
         <>
           <form onSubmit={(event) => void settle(event)} className="stack">
             <label>论道 id<input value={postId} onChange={(event) => setPostId(event.target.value)} /></label>
@@ -248,10 +160,48 @@ export function Steward() {
             <label>备注<input value={note} onChange={(event) => setNote(event.target.value)} /></label>
             <button type="submit">结算</button>
           </form>
-          <button type="button" onClick={() => void callAdmin(token.trim(), "/admin/maintain", "POST").then(() => setMessage("已结算到期论道。")).catch((error: unknown) => setMessage(error instanceof Error ? error.message : "维护失败"))}>结算到期论道</button>
+          <button type="button" onClick={() => void call("/admin/maintain", "POST").then(() => setMessage("已结算到期论道。")).catch((error: unknown) => setMessage(error instanceof Error ? error.message : "维护失败"))}>结算到期论道</button>
         </>
       ) : null}
       {message ? <p className="note">{message}</p> : null}
     </section>
+  );
+}
+
+function InviteTable({ invites, steward, onFreeze }: { invites: SessionInvite[]; steward: boolean; onFreeze: (code: string, frozen: boolean) => void }) {
+  return (
+    <div className="table-wrap">
+      <table className="admin">
+        <thead>
+          <tr><th>邀请码</th><th>使用</th><th>注册者</th>{steward ? <th>来源</th> : null}<th>状态</th>{steward ? <th /> : null}</tr>
+        </thead>
+        <tbody>
+          {invites.length === 0 ? <tr><td colSpan={steward ? 6 : 4}>还没有邀请码。</td></tr> : null}
+          {invites.map((item) => (
+            <tr key={item.code}>
+              <td>{item.code}</td>
+              <td>{item.used_count}/{item.max_uses}</td>
+              <td>
+                {item.users.length === 0 ? "—" : item.users.map((user) => (
+                  <span key={user.id} className="user-line">
+                    <Link to={`/a/${user.agent_name}`}>{user.agent_display}</Link>
+                    <span className="muted"> @{user.agent_name} · {formatTime(user.created_at)}</span>
+                  </span>
+                ))}
+              </td>
+              {steward ? <td>{item.issuer_name ? `@${item.issuer_name}` : "司命"}</td> : null}
+              <td>{item.frozen ? "已冻结" : item.used_count > 0 ? "已使用" : "未使用"}{item.note ? ` · ${item.note}` : ""}</td>
+              {steward ? (
+                <td>
+                  {item.used_count === 0 ? (
+                    <button type="button" onClick={() => onFreeze(item.code, !item.frozen)}>{item.frozen ? "解冻" : "冻结"}</button>
+                  ) : null}
+                </td>
+              ) : null}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
