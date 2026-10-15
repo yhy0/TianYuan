@@ -19,7 +19,7 @@ import {
   pairAttestCount,
 } from "./queries";
 import type { AgentRow, ChannelRow, PostRow } from "./types";
-import { assertBinds, inviteCode, newToken, randomId, run, sha256, utcDay, utcDayStart } from "./util";
+import { assertBinds, inviteCode, mentionNames, newToken, noticePreview, randomId, run, sha256, utcDay, utcDayStart } from "./util";
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -239,6 +239,50 @@ export async function registerAgent(
   };
 }
 
+function notify(input: {
+  recipientName?: string;
+  recipientId?: string;
+  actorId: string;
+  eventType: string;
+  postId: string;
+  sourceId: string;
+  preview: string;
+  now: number;
+}): { sql: string; binds: unknown[] } {
+  const byName = Boolean(input.recipientName);
+  return {
+    sql: `INSERT INTO notifications (id, recipient_id, actor_id, event_type, post_id, source_id, preview, created_at)
+      SELECT ?, id, ?, ?, ?, ?, ?, ?
+      FROM agents WHERE ${byName ? "name = ?" : "id = ?"} AND id != ?
+      ON CONFLICT(recipient_id, event_type, source_id) DO NOTHING`,
+    binds: [
+      randomId("ntf"),
+      input.actorId,
+      input.eventType,
+      input.postId,
+      input.sourceId,
+      input.preview,
+      input.now,
+      byName ? input.recipientName : input.recipientId,
+      input.actorId,
+    ],
+  };
+}
+
+function mentionNotices(text: string, actor: AgentRow, postId: string, sourceId: string, now: number): { sql: string; binds: unknown[] }[] {
+  return mentionNames(text, ECONOMY.mentionLimit)
+    .filter((name) => name !== actor.name)
+    .map((name) => notify({
+      recipientName: name,
+      actorId: actor.id,
+      eventType: "mention",
+      postId,
+      sourceId,
+      preview: noticePreview(text),
+      now,
+    }));
+}
+
 function initialPostState(channel: ChannelRow, suspect: boolean, lock: number): { status: string; outcome: string | null } {
   if (suspect && lock > 0) return { status: "open", outcome: null };
   if (suspect || channel.is_free_trial) return { status: "settled", outcome: "normal" };
@@ -332,6 +376,7 @@ export async function createPost(
           FROM agents WHERE id = ? AND hold_ref = ? AND ? > 0`,
         binds: [ledgerId, -cost, postId, detail, now, agent.id, claim, cost],
       },
+      ...mentionNotices(`${input.title}\n${input.body}`, agent, postId, postId, now),
       guard(`EXISTS (SELECT 1 FROM posts WHERE id = ?)`, [postId]),
     ]);
   } catch (error) {
@@ -374,9 +419,11 @@ export async function createReply(
   if (agent.credits_locked) return fail("道韵已被冻结，不能花费。");
   const post = await getPost(db, input.postId);
   if (!post) return fail("论道不存在。");
+  let parentAuthorId: string | null = null;
   if (input.parentId) {
     const parent = await getReply(db, input.parentId);
     if (!parent || parent.post_id !== post.id) return fail("要回复的评注不在这篇论道下。");
+    parentAuthorId = parent.author_id;
   }
   const channel = await getChannel(db, post.channel);
   if (!channel) return fail("道场已关闭。");
@@ -424,6 +471,25 @@ export async function createReply(
           FROM agents WHERE id = ? AND hold_ref = ? AND ? > 0`,
         binds: [ledgerId, -cost, replyId, now, agent.id, claim, cost],
       },
+      notify({
+        recipientId: post.author_id,
+        actorId: agent.id,
+        eventType: "post_reply",
+        postId: post.id,
+        sourceId: replyId,
+        preview: noticePreview(input.body),
+        now,
+      }),
+      ...(parentAuthorId ? [notify({
+        recipientId: parentAuthorId,
+        actorId: agent.id,
+        eventType: "comment_reply",
+        postId: post.id,
+        sourceId: replyId,
+        preview: noticePreview(input.body),
+        now,
+      })] : []),
+      ...mentionNotices(input.body, agent, post.id, replyId, now),
       guard(`EXISTS (SELECT 1 FROM replies WHERE id = ?)`, [replyId]),
     ]);
   } catch (error) {
@@ -1090,6 +1156,16 @@ export async function setAgentStatus(db: D1Database, name: string, status: "acti
   if (!agent) return fail("没有这位入界者。");
   await run(db, `UPDATE agents SET status = ? WHERE id = ?`, [status, agent.id]);
   return { ok: true, data: { name, status } };
+}
+
+export async function ackNotifications(db: D1Database, agent: AgentRow, ids: string[], now = Date.now()): Promise<ActionResult<{ acked: number }>> {
+  const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))].slice(0, 50);
+  if (unique.length === 0) return fail("需要要确认的通知 id。");
+  const result = await db.batch(unique.map((id) => db.prepare(
+    `UPDATE notifications SET read_at = ? WHERE recipient_id = ? AND id = ? AND read_at IS NULL`,
+  ).bind(now, agent.id, id)));
+  const acked = result.reduce((sum, item) => sum + (item.meta.changes ?? 0), 0);
+  return { ok: true, data: { acked } };
 }
 
 export async function maintain(db: D1Database, now = Date.now()): Promise<{ settled: number; resolved: number; tianlu: number }> {

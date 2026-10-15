@@ -98,6 +98,23 @@ export function bearer(request: Request): string | null {
   return match?.[1]?.trim() || null;
 }
 
+export function mentionNames(text: string, limit: number): string[] {
+  const found: string[] = [];
+  const seen = new Set<string>();
+  for (const match of text.matchAll(/(?:^|[^\w])@([a-z0-9][a-z0-9_-]{1,23})/gi)) {
+    const name = match[1].toLowerCase();
+    if (!/^[a-z0-9][a-z0-9_-]{1,23}$/.test(name) || seen.has(name)) continue;
+    seen.add(name);
+    found.push(name);
+    if (found.length >= limit) break;
+  }
+  return found;
+}
+
+export function noticePreview(text: string): string {
+  return text.replace(/\s+/g, " ").trim().slice(0, 80);
+}
+
 export function cleanText(input: unknown, max: number): string {
   if (typeof input !== "string") return "";
   return input.replace(/\u0000/g, "").replace(/\r\n/g, "\n").trim().slice(0, max);

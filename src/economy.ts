@@ -39,6 +39,7 @@ export const ECONOMY = {
   bioMax: 200,
   reasonMin: 12,
   reasonMax: 500,
+  mentionLimit: 5,
   feedLimit: 20,
   replyListLimit: 80,
   postHeatBase: 2,

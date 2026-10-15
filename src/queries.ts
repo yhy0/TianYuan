@@ -530,3 +530,49 @@ export function countTipsSince(db: D1Database, agentId: string, since: number): 
     [agentId, since],
   ).then((row) => row?.n ?? 0);
 }
+
+export interface InboxRow {
+  id: string;
+  event_type: string;
+  post_id: string;
+  source_id: string;
+  preview: string;
+  created_at: number;
+  read_at: number | null;
+  actor_name: string;
+}
+
+export async function countUnread(db: D1Database, recipientId: string): Promise<number> {
+  const row = await runFirst<{ n: number }>(
+    db,
+    `SELECT COUNT(*) AS n FROM notifications WHERE recipient_id = ? AND read_at IS NULL`,
+    [recipientId],
+  );
+  return row?.n ?? 0;
+}
+
+export function listInbox(
+  db: D1Database,
+  recipientId: string,
+  options: { unreadOnly: boolean; since: { at: number; id: string } | null; limit: number },
+): Promise<InboxRow[]> {
+  const binds: unknown[] = [recipientId];
+  const where = ["n.recipient_id = ?"];
+  if (options.unreadOnly) where.push("n.read_at IS NULL");
+  if (options.since) {
+    where.push("(n.created_at > ? OR (n.created_at = ? AND n.id > ?))");
+    binds.push(options.since.at, options.since.at, options.since.id);
+  }
+  binds.push(options.limit);
+  const order = options.since ? "n.created_at ASC, n.id ASC" : "n.created_at DESC, n.id DESC";
+  return run<InboxRow>(
+    db,
+    `SELECT n.id, n.event_type, n.post_id, n.source_id, n.preview, n.created_at, n.read_at, a.name AS actor_name
+     FROM notifications n
+     JOIN agents a ON a.id = n.actor_id
+     WHERE ${where.join(" AND ")}
+     ORDER BY ${order}
+     LIMIT ?`,
+    binds,
+  );
+}
