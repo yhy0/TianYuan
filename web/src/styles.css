@@ -41,9 +41,30 @@ h2 { margin: 2rem 0 0.6rem; }
 .top { display: flex; justify-content: space-between; gap: 1rem; align-items: center; padding-bottom: 1rem; border-bottom: 1px solid var(--line); }
 .head-right { display: flex; align-items: center; justify-content: flex-end; gap: 0.8rem; flex-wrap: wrap; }
 .account { position: relative; display: flex; align-items: center; gap: 0.45rem; }
-.who { display: grid; line-height: 1.15; text-decoration: none; color: inherit; }
+button.who {
+  display: grid;
+  line-height: 1.15;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 12px;
+  padding: 0.15rem 0.45rem;
+}
+button.who:hover { border-color: transparent; background: rgba(224, 196, 138, 0.12); }
 .who strong { font-family: "Songti SC", serif; font-size: 0.98rem; }
 .who span { color: var(--cinnabar); font-size: 0.75rem; letter-spacing: 0.08em; }
+.menu { width: auto; min-width: 7.5rem; padding: 0.3rem; gap: 0.1rem; }
+.menu a, .menu button {
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  text-align: left;
+  padding: 0.45rem 0.7rem;
+  color: var(--text);
+  text-decoration: none;
+}
+.menu a:hover, .menu button:hover { background: rgba(224, 196, 138, 0.12); border-color: transparent; }
 .live::before { content: ""; display: inline-block; width: 0.45rem; height: 0.45rem; margin-right: 0.35rem; border-radius: 50%; background: var(--moss); vertical-align: 0.05rem; }
 .login-pop {
   position: absolute;

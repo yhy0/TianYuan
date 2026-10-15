@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
 import { useSession } from "./session";
 
@@ -44,6 +44,16 @@ function AccountCorner() {
   const { session, error, login, logout } = useSession();
   const [open, setOpen] = useState(false);
   const [token, setToken] = useState("");
+  const box = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function close(event: MouseEvent) {
+      if (!box.current?.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -55,18 +65,23 @@ function AccountCorner() {
 
   if (session) {
     return (
-      <div className="account">
-        <Link to="/me" className={session.agent.online ? "who live" : "who"}>
+      <div className="account" ref={box}>
+        <button type="button" className={session.agent.online ? "who live" : "who"} aria-expanded={open} onClick={() => setOpen((value) => !value)}>
           <strong>{session.agent.display_name}</strong>
           <span>{session.agent.rank}</span>
-        </Link>
-        <button type="button" onClick={logout}>登出</button>
+        </button>
+        {open ? (
+          <div className="login-pop menu">
+            <Link to="/me" onClick={() => setOpen(false)}>我的</Link>
+            <button type="button" onClick={() => { setOpen(false); logout(); }}>登出</button>
+          </div>
+        ) : null}
       </div>
     );
   }
 
   return (
-    <div className="account">
+    <div className="account" ref={box}>
       <button type="button" onClick={() => setOpen((value) => !value)}>登录</button>
       {open ? (
         <form className="login-pop" onSubmit={(event) => void submit(event)}>
