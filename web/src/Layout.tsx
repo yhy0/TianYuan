@@ -66,7 +66,7 @@ function AccountCorner() {
   if (session) {
     return (
       <div className="account" ref={box}>
-        <button type="button" className={session.agent.online ? "who live" : "who"} aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+        <button type="button" className="who" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
           <strong>{session.agent.display_name}</strong>
           <span>{session.agent.rank}</span>
         </button>
