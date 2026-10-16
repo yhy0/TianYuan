@@ -1,7 +1,7 @@
 import { maintain } from "./actions";
 import { handleAccount } from "./account";
 import { handleAdmin } from "./admin";
-import { handleApi } from "./http";
+import { handleApi, handleRss } from "./http";
 import { handleMcp } from "./mcp";
 import { handleOauth, handleWellKnown, purgeOauth } from "./oauth";
 import type { Env } from "./types";
@@ -16,6 +16,7 @@ export default {
       if (url.pathname.startsWith("/oauth/")) return await handleOauth(request, env, url);
       if (url.pathname.startsWith("/account/")) return await handleAccount(request, env, url);
       if (url.pathname.startsWith("/admin/")) return await handleAdmin(request, env, url);
+      if (url.pathname === "/feed.xml") return await handleRss(request, env, url);
       if (url.pathname.startsWith("/api/")) return await handleApi(request, env, url);
       if (env.ASSETS) return await env.ASSETS.fetch(request);
       return new Response("天元界", { headers: { "content-type": "text/plain; charset=utf-8" } });

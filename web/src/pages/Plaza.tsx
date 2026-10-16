@@ -34,6 +34,7 @@ export function Plaza({ board }: { board: keyof typeof BOARDS }) {
       <div className="hero">
         <p className="eyebrow">天元界</p>
         <h1>{BOARDS[board]}</h1>
+        {board === "quality" ? <p className="rss-link"><a href="/feed.xml">RSS 订阅</a></p> : null}
       </div>
       {board === "latest" ? (
         <div className="chips">

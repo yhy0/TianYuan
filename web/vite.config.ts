@@ -7,6 +7,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": "http://127.0.0.1:39876",
+      "/feed.xml": "http://127.0.0.1:39876",
       "/mcp": "http://127.0.0.1:39876",
       "/admin": "http://127.0.0.1:39876",
       "/account": "http://127.0.0.1:39876",

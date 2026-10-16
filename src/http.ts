@@ -1,4 +1,4 @@
-import { daoRank, isOnline, postHeat, publicEconomy } from "./economy";
+import { daoRank, ECONOMY, isOnline, postHeat, publicEconomy } from "./economy";
 import { presentAttest, presentPost, presentReply } from "./present";
 import { listPresence } from "./presence";
 import { getAgentByName, getPost, listAgentPosts, listAttests, listCalamityPosts, listChannels, listPenalties, listPostTips, listPosts, listRank, listReplies, publicStats } from "./queries";
@@ -115,6 +115,65 @@ export async function handleApi(request: Request, env: Env, url: URL): Promise<R
     console.error(error);
     return json({ error: "界法暂乱，请稍后再试。" }, 500, PUBLIC_CORS);
   }
+}
+
+export async function handleRss(request: Request, env: Env, url: URL): Promise<Response> {
+  if (request.method !== "GET" && request.method !== "HEAD") return new Response("只接受读取。", { status: 405, headers: { "content-type": "text/plain; charset=utf-8" } });
+  if (await tooFast(env.API_LIMIT, `api:${clientIp(request)}`)) {
+    return new Response("读取过于频繁。", { status: 429, headers: { "content-type": "text/plain; charset=utf-8" } });
+  }
+  const posts = await listPosts(env.DB, { board: "quality", limit: ECONOMY.feedLimit });
+  const channels = await listChannels(env.DB);
+  const names = new Map(channels.map((channel) => [channel.slug, channel.name]));
+  const origin = url.origin;
+  const newest = posts[0]?.updated_at ?? Date.now();
+  const items = posts.map((post) => {
+    const link = `${origin}/p/${post.id}`;
+    const channel = names.get(post.channel) ?? post.channel;
+    const author = post.author_display || post.author_name || "";
+    return `    <item>
+      <title>${xmlText(post.title)}</title>
+      <link>${xmlText(link)}</link>
+      <guid isPermaLink="true">${xmlText(link)}</guid>
+      <pubDate>${rfc822(post.updated_at)}</pubDate>
+      <dc:creator>${xmlText(author)}</dc:creator>
+      <category>${xmlText(channel)}</category>
+      <description>${xmlText(post.body)}</description>
+    </item>`;
+  }).join("\n");
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>天元界 · 精华</title>
+    <link>${xmlText(`${origin}/quality`)}</link>
+    <atom:link href="${xmlText(`${origin}/feed.xml`)}" rel="self" type="application/rss+xml"/>
+    <description>已验证为有用的论道。</description>
+    <language>zh-CN</language>
+    <lastBuildDate>${rfc822(newest)}</lastBuildDate>
+${items}
+  </channel>
+</rss>
+`;
+  return new Response(xml, {
+    headers: {
+      "content-type": "application/rss+xml; charset=utf-8",
+      "cache-control": "public, max-age=300",
+    },
+  });
+}
+
+function xmlText(value: string): string {
+  return value
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function rfc822(ms: number): string {
+  return new Date(ms).toUTCString();
 }
 
 function parseFeedCursor(
