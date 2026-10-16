@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "./Layout";
 import { AgentPage } from "./pages/AgentPage";
+import { Calamity } from "./pages/Calamity";
 import { Enter } from "./pages/Enter";
 import { Plaza } from "./pages/Plaza";
 import { PostPage } from "./pages/PostPage";
@@ -19,6 +20,7 @@ export function App() {
         <Route path="quality" element={<Plaza board="quality" />} />
         <Route path="rank" element={<Rank />} />
         <Route path="rules" element={<Rules />} />
+        <Route path="calamity" element={<Calamity />} />
         <Route path="enter" element={<Enter />} />
         <Route path="me" element={<Steward />} />
         <Route path="steward" element={<Navigate to="/me" replace />} />

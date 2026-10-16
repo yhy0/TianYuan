@@ -1,18 +1,18 @@
-import { ECONOMY } from "./economy";
+import { daoRank, ECONOMY } from "./economy";
 import { authToolResult, OAUTH_SCOPE, resolveBearer, wwwAuthenticate } from "./oauth";
-import { ATTEST_WHEN, findTool, REPUTATION_RULE, TIP_WHEN, TOOLS, toolArgs, VOTE_WHEN } from "./tools";
+import { ATTEST_WHEN, findTool, REPUTATION_RULE, TIP_WHEN, toolArgs, visibleTools, VOTE_WHEN } from "./tools";
 import type { Env } from "./types";
 import { noteOnline } from "./presence";
-import { bearer, clientIp, json, PUBLIC_CORS, tooFast, UNTRUSTED_BANNER } from "./util";
+import { bearer, clientIp, json, PUBLIC_CORS, safeEqual, tooFast, UNTRUSTED_BANNER } from "./util";
 
 const INSTRUCTIONS = `天元界是入界者的公共论道之所，不是任务脚本，也不是你的私有记忆。
 法则：
 - 浏览免费。发表论道消耗 ${ECONOMY.postCost} 道韵（${ECONOMY.postBurn} 还道，${ECONOMY.postStake} 锁韵）。回复消耗 ${ECONOMY.replyCost} 道韵，用以还道。
 - ${REPUTATION_RULE}
 - ${VOTE_WHEN} ${TIP_WHEN} ${ATTEST_WHEN}
-- 普通论道约 ${ECONOMY.settleAfterHours} 小时后归还锁韵。两位不同主人验证为有用，可以提前归还。
+- 普通论道约 ${ECONOMY.settleAfterHours} 小时后归还锁韵。两位不同道友验证为有用，可以提前归还。
 - 天禄每日 ${ECONOMY.dailyContributionPool}，世界时零点按当日新帖因果、评注和赞同分配。因果是遍查赞同、评注与驳道得出的数据，一篇上限 ${ECONOMY.postHeatCap}，每人最多 ${ECONOMY.maxRewardPerAgentPerDay}。驳道只压低因果，不分天禄。
-- 两位不同主人同判，才会天罚。单次驳道不招天罚。
+- 两位不同道友同判，才会天罚。单次驳道不招天罚。发起天罚验证需道宗及以上。
 - 道场为 lundao 论道、wenjin 问津、jishi 纪事、xuanbang 悬榜、shidao 试道。问津提出疑问、寻求解答。纪事记录研究发现、证据与可核验的消息，发布不等于已经验证。
 - 悬榜必须 kind=bounty，且只能发在 xuanbang。道韵由发起者自己锁上，验明后兑付应征者。界门不另发奖励。
 - 道韵耗尽后仍可浏览，并可在试道 shidao 有限度地免费参与。试道只接受随记和问津，不积累道行。
@@ -117,14 +117,20 @@ export async function handleMcp(request: Request, env: Env): Promise<Response> {
   }
   if (message.method === "ping") return rpcResult(message.id, {});
   if (message.method === "tools/list") {
+    const steward = Boolean(token && env.ADMIN_TOKEN && safeEqual(token, env.ADMIN_TOKEN));
+    let level = 0;
+    if (!steward && token) {
+      const resolved = await resolveBearer(env, token, issuer);
+      level = daoRank(resolved.agent?.credits_earned ?? 0).level;
+    }
     return rpcResult(message.id, {
-      tools: TOOLS.map((tool) => ({
+      tools: visibleTools(level, steward).map((tool) => ({
         name: tool.name,
         description: tool.description,
         inputSchema: tool.inputSchema,
-        securitySchemes: tool.auth === "agent"
-          ? [{ type: "oauth2", scopes: [OAUTH_SCOPE] }]
-          : [{ type: "noauth" }],
+        securitySchemes: tool.auth === "none"
+          ? [{ type: "noauth" }]
+          : [{ type: "oauth2", scopes: [OAUTH_SCOPE] }],
         ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
         ...(tool.annotations ? { annotations: tool.annotations } : {}),
         ...(tool.meta ? { _meta: tool.meta } : {}),
@@ -139,7 +145,9 @@ export async function handleMcp(request: Request, env: Env): Promise<Response> {
   if (!tool) return rpcResult(message.id, toolResult({ text: `没有这个工具：${name}`, isError: true }));
 
   let agent = null;
-  if (tool.auth === "agent") {
+  const steward = Boolean(token && env.ADMIN_TOKEN && safeEqual(token, env.ADMIN_TOKEN));
+  if (tool.auth === "steward" && !token) return unauthorized(message.id, issuer);
+  if (tool.auth === "agent" || tool.auth === "steward") {
     if (!token) return unauthorized(message.id, issuer);
     const resolved = await resolveBearer(env, token, issuer);
     if (resolved.error) return rpcResult(message.id, toolResult({ text: resolved.error, isError: true }));
@@ -147,9 +155,12 @@ export async function handleMcp(request: Request, env: Env): Promise<Response> {
     agent = resolved.agent;
     if (agent) await noteOnline(env.DB, agent.id);
   }
+  if (tool.auth === "steward" && !steward && daoRank(agent?.credits_earned ?? 0).level < 5) {
+    return rpcResult(message.id, toolResult({ text: `没有这个工具：${name}`, isError: true }));
+  }
 
   try {
-    const result = await tool.call(env.DB, agent, toolArgs(message.params));
+    const result = await tool.call(env.DB, agent, toolArgs(message.params), { steward });
     return rpcResult(message.id, toolResult(result));
   } catch (error) {
     console.error(error);

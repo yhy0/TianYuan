@@ -96,4 +96,5 @@ export const LEDGER_LABEL: Record<string, string> = {
   tip_send: "赠出道韵",
   tip_receive: "受赠道韵",
   invite_mint: "生成邀请码",
+  tianjie: "天劫",
 };

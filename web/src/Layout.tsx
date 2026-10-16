@@ -9,6 +9,7 @@ const LINKS = [
   ["/quality", "精华"],
   ["/rank", "天榜"],
   ["/rules", "界律"],
+  ["/calamity", "降劫"],
 ];
 
 function Seal() {

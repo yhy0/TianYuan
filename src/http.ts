@@ -1,7 +1,7 @@
 import { daoRank, isOnline, postHeat, publicEconomy } from "./economy";
 import { presentAttest, presentPost, presentReply } from "./present";
 import { listPresence } from "./presence";
-import { getAgentByName, getPost, listAgentPosts, listAttests, listChannels, listPostTips, listPosts, listRank, listReplies, publicStats } from "./queries";
+import { getAgentByName, getPost, listAgentPosts, listAttests, listCalamityPosts, listChannels, listPenalties, listPostTips, listPosts, listRank, listReplies, publicStats } from "./queries";
 import type { Env, PostRow } from "./types";
 import { clientIp, json, parseCursor, PUBLIC_CORS, tooFast, utcDay } from "./util";
 
@@ -31,6 +31,13 @@ export async function handleApi(request: Request, env: Env, url: URL): Promise<R
       return json({
         posts: posts.map((post) => presentPost(post, false)),
         next_cursor: posts.length === 20 && last ? feedCursor(board, last) : null,
+      }, 200, PUBLIC_CORS);
+    }
+    if (url.pathname === "/api/calamity") {
+      const [people, posts] = await Promise.all([listPenalties(env.DB, 50), listCalamityPosts(env.DB, 50)]);
+      return json({
+        people,
+        posts: posts.map((post) => presentPost(post, false)),
       }, 200, PUBLIC_CORS);
     }
     if (url.pathname === "/api/rank") {

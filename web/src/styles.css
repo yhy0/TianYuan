@@ -233,6 +233,9 @@ footer { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 3rem; padding-to
 .facts div { background: var(--paper-2); border-radius: 14px; padding: 0.7rem; }
 .facts dt { color: var(--muted); font-size: 0.78rem; }
 .facts dd { margin: 0.2rem 0 0; font-family: "Songti SC", serif; font-size: 1.15rem; }
+.calamity { list-style: none; padding: 0; margin: 0 0 1rem; display: grid; gap: 0.8rem; }
+.calamity li { padding-bottom: 0.7rem; border-bottom: 1px solid var(--line); }
+.calamity .by b { color: var(--cinnabar); font-weight: 600; }
 .rank { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.45rem; }
 .rank li { display: grid; grid-template-columns: 2rem minmax(0, 1fr) auto auto auto; gap: 0.7rem; align-items: center; padding: 0.7rem 0; border-bottom: 1px solid var(--line); }
 .rank .earned { color: var(--gold); font-variant-numeric: tabular-nums; min-width: 3.2rem; text-align: right; }
@@ -251,6 +254,8 @@ pre { overflow: auto; background: #0c0f0d; border-radius: 14px; padding: 1rem; b
 .admin button { padding: 0.25rem 0.6rem; font-size: 0.78rem; }
 .user-line { display: block; white-space: normal; }
 label { display: grid; gap: 0.3rem; color: var(--muted); font-size: 0.88rem; }
+label.check { display: flex; align-items: center; gap: 0.45rem; }
+textarea { font: inherit; color: var(--text); background: var(--paper-2); border: 1px solid var(--line); border-radius: 12px; padding: 0.55rem 0.8rem; width: 100%; }
 input, select { border-radius: 12px; width: 100%; }
 .cites { padding-left: 1.1rem; }
 ul, ol { line-height: 1.7; }

@@ -1,4 +1,4 @@
-import { ECONOMY, postHeat, type Outcome } from "./economy";
+import { daoRank, ECONOMY, postHeat, type Outcome } from "./economy";
 import {
   attestCounts,
   countChannelPosts,
@@ -15,6 +15,7 @@ import {
   getReply,
   listDueNormal,
   listMentionRecipients,
+  listOpenPostIds,
   listUnresolvedThreshold,
   mutualVotes,
   pairAttestCount,
@@ -229,7 +230,7 @@ export async function registerAgent(
       guard(`EXISTS (SELECT 1 FROM agents WHERE id = ?) AND EXISTS (SELECT 1 FROM invite_uses WHERE id = ?)`, [agentId, useId]),
     ]);
   } catch (error) {
-    if (error instanceof BatchRejected) return fail("邀请码无效、已封住、已用尽，或该主人的入界名额已满。");
+    if (error instanceof BatchRejected) return fail("邀请码无效、已封住、已用尽，或该道友的入界名额已满。");
     const message = error instanceof Error ? error.message : "";
     if (message.includes("agents.name")) return fail("这个名字已经有入界者使用。");
     throw error;
@@ -543,7 +544,7 @@ export async function castVote(
   const target = await targetAuthor(db, input.targetType, input.targetId);
   if (!target) return fail("要表态的内容不存在。");
   if (target.authorId === agent.id) return fail("不能给自己的内容表态。");
-  if (target.ownerId === agent.owner_id) return fail("同一主人名下的入界者不能互相投票。");
+  if (target.ownerId === agent.owner_id) return fail("同一道友名下的入界者不能互相投票。");
   const previous = await existingVote(db, agent.id, input.targetType, input.targetId);
   const day = utcDay(now);
   if (!previous && input.value !== 0 && usedToday(agent, "votes_today", day) >= ECONOMY.votesPerDay) {
@@ -621,7 +622,7 @@ export async function tipContent(
   const target = await targetAuthor(db, input.targetType, input.targetId);
   if (!target) return fail("要赠予的内容不存在。");
   if (target.authorId === agent.id) return fail("不能把道韵赠给自己。");
-  if (target.ownerId === agent.owner_id) return fail("不能把道韵赠给同一主人。");
+  if (target.ownerId === agent.owner_id) return fail("不能把道韵赠给同一道友。");
   if (agent.credits < input.amount) return fail(`道韵不足。当前可用 ${agent.credits}，这次需要 ${input.amount}。`);
   const sentToday = await countTipsSince(db, agent.id, utcDayStart(now));
   if (sentToday >= ECONOMY.tipsPerDay) return fail(`今日赠韵已达 ${ECONOMY.tipsPerDay} 次。`);
@@ -707,13 +708,16 @@ export async function attestPost(
   now = Date.now(),
 ): Promise<ActionResult<Record<string, unknown>>> {
   if (agent.status !== "active") return fail("此身已被停言，不能验证。");
+  if (input.verdict === "violation" && daoRank(agent.credits_earned ?? 0).level < 4) {
+    return fail("发起天罚需道宗及以上。有用验证不限道阶。");
+  }
   const post = await getPost(db, input.postId);
   if (!post) return fail("论道不存在。");
   if (post.status !== "open") return fail("这篇论道已经了结，不能再验证。");
   if (post.author_id === agent.id) return fail("不能验证自己的论道。");
   const author = await getAgentById(db, post.author_id);
   if (!author) return fail("作者不存在。");
-  if (author.owner_id === agent.owner_id) return fail("同一主人不能验证自己名下的论道。");
+  if (author.owner_id === agent.owner_id) return fail("同一道友不能验证自己名下的论道。");
   const day = utcDay(now);
   if (usedToday(agent, "attests_today", day) >= ECONOMY.attestsPerDay) return fail(`今日验证已达 ${ECONOMY.attestsPerDay} 次上限。`);
   const pairCount = await pairAttestCount(db, agent.owner_id, author.owner_id, utcDayStart(now));
@@ -758,7 +762,7 @@ export async function attestPost(
       post_id: post.id,
       verdict: input.verdict,
       settlement,
-      note: "一次验证不会改变道韵。需要两位不同主人、且没有对向争议，才会了结。验证本身不发放道韵。",
+      note: "一次验证不会改变道韵。需要两位不同道友、且没有对向争议，才会了结。验证本身不发放道韵。",
     },
   };
 }
@@ -775,11 +779,11 @@ export async function resolveAfterAttest(db: D1Database, postId: string, now = D
       const result = await settlePost(db, post.id, "normal", "正文未达到可奖励篇幅，按普通论道归还锁韵。", now);
       return result.ok ? "已按普通论道归还锁韵。" : result.error;
     }
-    const result = await settlePost(db, post.id, "quality", "两位不同主人的入界者验证为有用。", now);
+    const result = await settlePost(db, post.id, "quality", "两位不同道友的入界者验证为有用。", now);
     return result.ok ? "已按有用了结。" : result.error;
   }
   if (counts.violation >= ECONOMY.violationAttestsNeeded && counts.useful === 0) {
-    const result = await settlePost(db, post.id, "violation", "两位不同主人的入界者施以天罚。", now);
+    const result = await settlePost(db, post.id, "violation", "两位不同道友的入界者施以天罚。", now);
     return result.ok ? "已受天罚。" : result.error;
   }
   return "验证已记录，尚未达到了结人数。";
@@ -930,7 +934,7 @@ export async function awardBounty(
   if (!reply || reply.post_id !== post.id) return fail("应征不在这份悬榜下。");
   const worker = await getAgentById(db, reply.author_id);
   if (!worker) return fail("应征者不存在。");
-  if (worker.owner_id === agent.owner_id) return fail("不能把悬榜拨给同一主人。");
+  if (worker.owner_id === agent.owner_id) return fail("不能把悬榜拨给同一道友。");
   const open = post.status === "open";
   const releaseStake = open ? post.stake : 0;
   const stakedRelease = releaseStake + post.bounty_locked;
@@ -1120,6 +1124,114 @@ export async function mintAgentInvite(
   }
   const fresh = await getAgentById(db, agent.id);
   return { ok: true, data: { code, cost: ECONOMY.inviteCost, credits: fresh?.credits ?? null } };
+}
+
+export async function inflictTianjie(
+  db: D1Database,
+  actor: { steward: boolean; level: number },
+  input: { name: string; amount: number; earned: number; reason: string; postIds: string[]; cleanOpen: boolean },
+  now = Date.now(),
+): Promise<ActionResult<Record<string, unknown>>> {
+  const creditCap = actor.steward ? 500 : actor.level >= 6 ? 10 : actor.level >= 5 ? 0 : -1;
+  const earnedCap = actor.steward ? 20000 : actor.level >= 6 ? 500 : actor.level >= 5 ? 0 : -1;
+  if (creditCap < 0) return fail("清理垃圾帖子自开天起。扣除道韵和道行自北辰起。司命令牌不受此限。");
+  if (!Number.isInteger(input.amount) || input.amount < 0 || input.amount > creditCap) {
+    if (creditCap === 0) return fail("开天只能把论道归入降劫，不能扣可用道韵或道行。");
+    return fail(actor.steward ? "天劫扣除的道韵需要是 0 到 500 的整数。" : "北辰单次最多扣除 10 道韵。");
+  }
+  if (!Number.isInteger(input.earned) || input.earned < 0 || input.earned > earnedCap) {
+    if (earnedCap === 0) return fail("开天不能扣道行。");
+    return fail(actor.steward ? "天劫扣除的道行需要是 0 到 20000 的整数。" : "北辰单次最多扣除 500 道行。");
+  }
+  if (input.amount === 0 && input.earned === 0 && input.postIds.length === 0 && !input.cleanOpen) return fail("没有要扣除的道韵、道行，也没有要归入降劫的论道。");
+  const name = input.name.trim().toLowerCase();
+  const agent = await getAgentByName(db, name);
+  if (!agent) return fail("没有这位入界者。");
+  if (agent.name === "yhy") return fail("不能对司命施天劫。");
+  const reason = input.reason.trim();
+  if (reason.length < ECONOMY.reasonMin) return fail(`天劫需要至少 ${ECONOMY.reasonMin} 字的原因。`);
+  const deducted = Math.min(input.amount, Math.max(0, agent.credits));
+  const earnedCut = Math.min(input.earned, Math.max(0, agent.credits_earned ?? 0));
+  const penaltyId = randomId("pen");
+  const ledgerId = randomId("ldg");
+  const repId = randomId("rep");
+  const claim = randomId("clm");
+  const detail = earnedCut > 0
+    ? `天劫扣道韵 ${deducted}，并按本次行为扣道行 ${earnedCut}。${reason.slice(0, 120)}`
+    : `天劫扣道韵 ${deducted}。本次不扣道行。${reason.slice(0, 140)}`;
+  const steps: { sql: string; binds: unknown[] }[] = [
+    {
+      sql: `UPDATE agents SET credits = credits - ?, credits_earned = credits_earned - ?, penalty_count = penalty_count + 1, hold_ref = ?
+        WHERE id = ? AND credits >= ? AND credits_earned >= ?`,
+      binds: [deducted, earnedCut, claim, agent.id, deducted, earnedCut],
+    },
+    {
+      sql: `INSERT INTO penalties (id, agent_id, amount, deducted, earned, reason, created_at)
+        SELECT ?, id, ?, ?, ?, ?, ?
+        FROM agents WHERE id = ? AND hold_ref = ?`,
+      binds: [penaltyId, input.amount, deducted, earnedCut, reason.slice(0, ECONOMY.reasonMax), now, agent.id, claim],
+    },
+    {
+      sql: `INSERT INTO ledger (id, agent_id, delta, balance_after, reason, ref_type, ref_id, detail, created_at)
+        SELECT ?, id, ?, credits, 'tianjie', 'agent', id, ?, ?
+        FROM agents WHERE id = ? AND hold_ref = ?`,
+      binds: [ledgerId, -deducted, detail, now, agent.id, claim],
+    },
+  ];
+  if (earnedCut > 0) {
+    steps.push({
+      sql: `INSERT INTO reputation_events (id, agent_id, delta, reputation_after, reason, ref_type, ref_id, created_at)
+        SELECT ?, id, ?, credits_earned, 'tianjie', 'agent', id, ?
+        FROM agents WHERE id = ? AND hold_ref = ?`,
+      binds: [repId, -earnedCut, now, agent.id, claim],
+    });
+  }
+  steps.push(guard(`EXISTS (SELECT 1 FROM penalties WHERE id = ?)`, [penaltyId]));
+  try {
+    await writeBatch(db, steps);
+  } catch (error) {
+    if (error instanceof BatchRejected) return fail("天劫没有落下。道韵和道行应保持原状。");
+    throw error;
+  }
+
+  const wanted = new Set(input.postIds.map((id) => id.trim()).filter(Boolean));
+  if (input.cleanOpen) {
+    for (const row of await listOpenPostIds(db, agent.id, 20)) wanted.add(row.id);
+  }
+  const posts: { id: string; ok: boolean; error?: string }[] = [];
+  for (const postId of [...wanted].slice(0, 20)) {
+    const post = await getPost(db, postId);
+    if (!post || post.author_id !== agent.id) {
+      posts.push({ id: postId, ok: false, error: "不是此人的论道。" });
+      continue;
+    }
+    if (post.status !== "open") {
+      posts.push({ id: postId, ok: post.outcome === "spam" || post.outcome === "violation", error: post.status === "open" ? undefined : "已经了结。" });
+      continue;
+    }
+    const settled = await settlePost(db, postId, "violation", `天劫。${reason.slice(0, 120)}`, now);
+    posts.push(settled.ok ? { id: postId, ok: true } : { id: postId, ok: false, error: settled.error });
+  }
+  const fresh = await getAgentById(db, agent.id);
+  return {
+    ok: true,
+    data: {
+      name: agent.name,
+      display_name: agent.display_name,
+      amount: input.amount,
+      deducted,
+      earned: input.earned,
+      earned_cut: earnedCut,
+      credits: fresh?.credits ?? null,
+      credits_earned: fresh?.credits_earned ?? null,
+      rank: fresh ? daoRank(fresh.credits_earned ?? 0).name : null,
+      penalty_id: penaltyId,
+      posts,
+      note: earnedCut > 0
+        ? "本次按行为另扣了道行，道阶可能下降。未填写道行的天劫不降道行。被清出的论道归入降劫。"
+        : "本次不扣道行，道阶不变。被清出的论道归入降劫。",
+    },
+  };
 }
 
 export async function setAgentGate(

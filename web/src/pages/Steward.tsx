@@ -6,7 +6,13 @@ import { useSession, type SessionInvite } from "../session";
 
 export function Steward() {
   const { session, loading, refresh, call } = useSession();
-  const [panel, setPanel] = useState<"invites" | "agents" | "settle">("invites");
+  const [panel, setPanel] = useState<"invites" | "agents" | "settle" | "tianjie">("invites");
+  const [target, setTarget] = useState("");
+  const [penalty, setPenalty] = useState("10");
+  const [cutMerit, setCutMerit] = useState(false);
+  const [merit, setMerit] = useState("");
+  const [cause, setCause] = useState("");
+  const [cleanOpen, setCleanOpen] = useState(true);
   const [postId, setPostId] = useState("");
   const [outcome, setOutcome] = useState("normal");
   const [note, setNote] = useState("");
@@ -69,6 +75,29 @@ export function Steward() {
     }
   }
 
+  async function tianjie(event: FormEvent) {
+    event.preventDefault();
+    setMessage("");
+    const earned = cutMerit ? Number(merit) : 0;
+    if (cutMerit && (!Number.isInteger(earned) || earned < 1)) {
+      setMessage("要另扣道行时，请按本次行为填写扣除数量。");
+      return;
+    }
+    try {
+      const data = await call("/admin/tianjie", "POST", {
+        name: target.trim(),
+        amount: Number(penalty),
+        earned,
+        reason: cause.trim(),
+        clean_open: cleanOpen,
+      });
+      setMessage(JSON.stringify(data));
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "天劫没有落下");
+    }
+  }
+
   async function gate(name: string, action: string) {
     setMessage("");
     try {
@@ -99,6 +128,7 @@ export function Steward() {
           <button className={panel === "invites" ? "on" : ""} type="button" onClick={() => setPanel("invites")}>邀请码</button>
           <button className={panel === "agents" ? "on" : ""} type="button" onClick={() => setPanel("agents")}>入界者</button>
           <button className={panel === "settle" ? "on" : ""} type="button" onClick={() => setPanel("settle")}>裁决</button>
+          <button className={panel === "tianjie" ? "on" : ""} type="button" onClick={() => setPanel("tianjie")}>天劫</button>
         </div>
       ) : null}
       {!steward || panel === "invites" ? (
@@ -147,6 +177,17 @@ export function Steward() {
             </tbody>
           </table>
         </div>
+      ) : null}
+      {steward && panel === "tianjie" ? (
+        <form onSubmit={(event) => void tianjie(event)} className="stack">
+          <label>道号<input value={target} onChange={(event) => setTarget(event.target.value)} /></label>
+          <label>扣除道韵<input value={penalty} onChange={(event) => setPenalty(event.target.value)} type="number" min={0} max={500} /></label>
+          <label className="check"><input checked={cutMerit} onChange={(event) => setCutMerit(event.target.checked)} type="checkbox" />按本次行为另扣道行</label>
+          {cutMerit ? <label>扣除道行<input value={merit} onChange={(event) => setMerit(event.target.value)} type="number" min={1} max={20000} /></label> : <p className="muted">不勾选则这次不降道行，道阶不变。</p>}
+          <label>原因<textarea value={cause} onChange={(event) => setCause(event.target.value)} rows={4} /></label>
+          <label className="check"><input checked={cleanOpen} onChange={(event) => setCleanOpen(event.target.checked)} type="checkbox" />清理其未了结的论道，归入降劫</label>
+          <button type="submit">施天劫</button>
+        </form>
       ) : null}
       {steward && panel === "settle" ? (
         <>

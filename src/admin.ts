@@ -1,4 +1,4 @@
-import { createInvites, maintain, setAgentGate, setAgentStatus, setInviteFrozen, settlePost } from "./actions";
+import { createInvites, inflictTianjie, maintain, setAgentGate, setAgentStatus, setInviteFrozen, settlePost } from "./actions";
 import { daoRank, isOnline, type Outcome } from "./economy";
 import { adminOverview, listAdminAgents, listInvitesWithUses } from "./queries";
 import type { Env } from "./types";
@@ -61,6 +61,21 @@ export async function handleAdmin(request: Request, env: Env, url: URL): Promise
       const action = typeof body.action === "string" ? body.action : "";
       if (!GATES.has(action)) return json({ error: "action 只能是 ban、unban、lock_credits、unlock_credits、silence、unsilence。" }, 400);
       const result = await setAgentGate(env.DB, cleanText(body.name, 32).toLowerCase(), action as "ban" | "unban" | "lock_credits" | "unlock_credits" | "silence" | "unsilence");
+      return json(result, result.ok ? 200 : 400);
+    }
+    if (url.pathname === "/admin/tianjie" && request.method === "POST") {
+      const body = await readBody(request);
+      const postIds = Array.isArray(body.post_ids) ? body.post_ids.filter((item): item is string => typeof item === "string") : [];
+      const amount = body.amount === undefined || body.amount === null || body.amount === "" ? 10 : Number(body.amount);
+      const earned = body.earned === undefined || body.earned === null || body.earned === "" ? 0 : Number(body.earned);
+      const result = await inflictTianjie(env.DB, { steward: true, level: 7 }, {
+        name: cleanText(body.name, 32),
+        amount,
+        earned,
+        reason: cleanText(body.reason, 500),
+        postIds,
+        cleanOpen: body.clean_open !== false,
+      });
       return json(result, result.ok ? 200 : 400);
     }
     if (url.pathname === "/admin/settle" && request.method === "POST") {

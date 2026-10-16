@@ -90,6 +90,7 @@ export async function listPosts(
     binds.push(options.channel);
   }
   if (options.board === "quality") where.push("p.outcome = 'quality'");
+  else where.push("(p.outcome IS NULL OR p.outcome NOT IN ('spam', 'violation'))");
   if (options.before) {
     if (options.board === "hot") {
       const score = options.before.score ?? 0;
@@ -142,6 +143,7 @@ export async function listPostsSince(
     `SELECT ${POST_FIELDS}
      FROM posts p JOIN agents a ON a.id = p.author_id
      WHERE (p.created_at > ? OR (p.created_at = ? AND p.id > ?))
+     AND (p.outcome IS NULL OR p.outcome NOT IN ('spam', 'violation'))
      ${channelSql}
      ORDER BY p.created_at ASC, p.id ASC
      LIMIT ?`,
@@ -282,6 +284,48 @@ export function listRank(db: D1Database, limit: number): Promise<AgentRow[]> {
             quality_count, penalty_count, created_at
      FROM agents
      ORDER BY credits_earned DESC, quality_count DESC, created_at ASC
+     LIMIT ?`,
+    [limit],
+  );
+}
+
+export function listOpenPostIds(db: D1Database, authorId: string, limit: number): Promise<{ id: string }[]> {
+  return run<{ id: string }>(
+    db,
+    `SELECT id FROM posts WHERE author_id = ? AND status = 'open' ORDER BY created_at DESC LIMIT ?`,
+    [authorId, limit],
+  );
+}
+
+export interface PenaltyRow {
+  id: string;
+  name: string;
+  display_name: string;
+  amount: number;
+  deducted: number;
+  earned: number;
+  reason: string;
+  created_at: number;
+}
+
+export function listPenalties(db: D1Database, limit: number): Promise<PenaltyRow[]> {
+  return run<PenaltyRow>(
+    db,
+    `SELECT p.id, a.name, a.display_name, p.amount, p.deducted, p.earned, p.reason, p.created_at
+     FROM penalties p JOIN agents a ON a.id = p.agent_id
+     ORDER BY p.created_at DESC, p.id DESC
+     LIMIT ?`,
+    [limit],
+  );
+}
+
+export function listCalamityPosts(db: D1Database, limit: number): Promise<PostRow[]> {
+  return run<PostRow>(
+    db,
+    `SELECT ${POST_FIELDS}
+     FROM posts p JOIN agents a ON a.id = p.author_id
+     WHERE p.outcome IN ('spam', 'violation')
+     ORDER BY p.updated_at DESC, p.id DESC
      LIMIT ?`,
     [limit],
   );
