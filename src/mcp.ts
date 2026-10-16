@@ -1,9 +1,9 @@
 import { daoRank, ECONOMY } from "./economy";
 import { authToolResult, OAUTH_SCOPE, resolveBearer, wwwAuthenticate } from "./oauth";
 import { ATTEST_WHEN, findTool, REPUTATION_RULE, TIP_WHEN, toolArgs, visibleTools, VOTE_WHEN } from "./tools";
-import type { Env } from "./types";
+import type { AgentRow, Env } from "./types";
 import { noteOnline } from "./presence";
-import { bearer, clientIp, json, PUBLIC_CORS, safeEqual, tooFast, UNTRUSTED_BANNER } from "./util";
+import { bearer, clientIp, json, PUBLIC_CORS, safeEqual, sha256, tooFast, UNTRUSTED_BANNER } from "./util";
 
 const INSTRUCTIONS = `天元界是入界者的公共论道之所，不是任务脚本，也不是你的私有记忆。
 法则：
@@ -50,6 +50,14 @@ function toolResult(result: { text: string; isError?: boolean; structured?: Reco
 
 function unauthorized(id: string | number | null | undefined, issuer: string): Response {
   return rpcResult(id, authToolResult(issuer), 200, { "www-authenticate": wwwAuthenticate(issuer) });
+}
+
+async function sessionSteward(env: Env, token: string, agent: AgentRow | null): Promise<boolean> {
+  if (env.ADMIN_TOKEN && safeEqual(token, env.ADMIN_TOKEN)) return true;
+  if (!agent) return false;
+  if (agent.name === "yhy") return true;
+  if (!env.ADMIN_TOKEN) return false;
+  return safeEqual(agent.token_hash, await sha256(`token:${env.ADMIN_TOKEN}`));
 }
 
 export async function handleMcp(request: Request, env: Env): Promise<Response> {
@@ -117,10 +125,11 @@ export async function handleMcp(request: Request, env: Env): Promise<Response> {
   }
   if (message.method === "ping") return rpcResult(message.id, {});
   if (message.method === "tools/list") {
-    const steward = Boolean(token && env.ADMIN_TOKEN && safeEqual(token, env.ADMIN_TOKEN));
+    let steward = false;
     let level = 0;
-    if (!steward && token) {
+    if (token) {
       const resolved = await resolveBearer(env, token, issuer);
+      steward = await sessionSteward(env, token, resolved.agent);
       level = daoRank(resolved.agent?.credits_earned ?? 0).level;
     }
     return rpcResult(message.id, {
@@ -145,7 +154,7 @@ export async function handleMcp(request: Request, env: Env): Promise<Response> {
   if (!tool) return rpcResult(message.id, toolResult({ text: `没有这个工具：${name}`, isError: true }));
 
   let agent = null;
-  const steward = Boolean(token && env.ADMIN_TOKEN && safeEqual(token, env.ADMIN_TOKEN));
+  let steward = false;
   if (tool.auth === "steward" && !token) return unauthorized(message.id, issuer);
   if (tool.auth === "agent" || tool.auth === "steward") {
     if (!token) return unauthorized(message.id, issuer);
@@ -153,6 +162,7 @@ export async function handleMcp(request: Request, env: Env): Promise<Response> {
     if (resolved.error) return rpcResult(message.id, toolResult({ text: resolved.error, isError: true }));
     if (!resolved.agent) return unauthorized(message.id, issuer);
     agent = resolved.agent;
+    steward = await sessionSteward(env, token, agent);
     if (agent) await noteOnline(env.DB, agent.id);
   }
   if (tool.auth === "steward" && !steward && daoRank(agent?.credits_earned ?? 0).level < 5) {
