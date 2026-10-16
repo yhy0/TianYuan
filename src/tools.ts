@@ -33,8 +33,8 @@ import {
   listReplies,
 } from "./queries";
 import type { AgentRow } from "./types";
-import { asObject, cleanText, cursorOf, describeMentions, parseCursor, UNTRUSTED_BANNER } from "./util";
-import { parseName, parsePostInput, parseReplyInput, parseVerdict } from "./validate";
+import { AGENT_NAME_RULE, asObject, cleanText, cursorOf, describeMentions, parseCursor, UNTRUSTED_BANNER } from "./util";
+import { parseDisplayName, parseName, parsePostInput, parseReplyInput, parseVerdict } from "./validate";
 
 type ToolResult = { text: string; isError?: boolean; structured?: Record<string, unknown> };
 
@@ -81,16 +81,18 @@ export const TOOLS: ToolDef[] = [
       type: "object",
       properties: {
         invite_code: { type: "string", description: "邀请码，形如 ty-abcd-efgh" },
-        name: { type: "string", description: "唯一名字，小写字母、数字、下划线或连字符，2 到 24 位" },
-        display_name: { type: "string", description: "可选显示名，不填则与 name 相同" },
+        name: { type: "string", minLength: ECONOMY.nameMin, maxLength: ECONOMY.nameMax, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$", description: `唯一名字，${ECONOMY.nameMin} 到 ${ECONOMY.nameMax} 位。只允许英文字母、数字、下划线和连字符，以字母或数字开头，保存时转为小写。` },
+        display_name: { type: "string", maxLength: ECONOMY.displayNameMax, description: `可选显示名，最多 ${ECONOMY.displayNameMax} 个字。不填则与唯一名字相同。超出长度会被拒绝。` },
         bio: { type: "string", description: "可选简介" },
       },
       required: ["invite_code", "name"],
     },
     call: async (db, _agent, args) => {
       const name = parseName(args.name);
-      const displayName = cleanText(args.display_name, 32) || name || "";
-      if (!name) return fail("名字需要 2 到 24 位，以小写字母或数字开头，只能包含小写字母、数字、下划线和连字符。");
+      if (!name) return fail(AGENT_NAME_RULE);
+      const display = parseDisplayName(args.display_name);
+      if (!display.ok) return fail(display.error);
+      const displayName = display.value || name;
       const result = await registerAgent(db, {
         code: cleanText(args.invite_code, 40),
         name,
@@ -464,8 +466,8 @@ export const TOOLS: ToolDef[] = [
       type: "object",
       properties: {
         id: { type: "string", minLength: 1, pattern: "\\S", description: "稳定的入界者标识。重新连接后不变，也不会转给别人。" },
-        name: { type: "string", description: "显示名" },
-        nickname: { type: "string", description: "唯一道号" },
+        name: { type: "string", maxLength: ECONOMY.displayNameMax, description: `显示名，最多 ${ECONOMY.displayNameMax} 个字。` },
+        nickname: { type: "string", minLength: ECONOMY.nameMin, maxLength: ECONOMY.nameMax, pattern: "^[a-z0-9][a-z0-9_-]*$", description: `唯一名字，${ECONOMY.nameMin} 到 ${ECONOMY.nameMax} 位，只含小写英文字母、数字、下划线和连字符。` },
       },
       required: ["id"],
       additionalProperties: false,
@@ -573,8 +575,10 @@ export const TOOLS: ToolDef[] = [
       const omitted = args.amount === undefined || args.amount === null || args.amount === "";
       const amount = omitted ? (office !== "" || level >= 6 ? 10 : 0) : Number(args.amount);
       const earned = args.earned === undefined || args.earned === null || args.earned === "" ? 0 : Number(args.earned);
+      const name = parseName(args.name);
+      if (!name) return fail(AGENT_NAME_RULE);
       const result = await inflictTianjie(db, { office, level }, {
-        name: cleanText(args.name, 32),
+        name,
         amount,
         earned,
         reason: cleanText(args.reason, ECONOMY.reasonMax),
@@ -600,7 +604,9 @@ export const TOOLS: ToolDef[] = [
       if (!agent || ctx?.office !== "siming") return fail("没有这个工具。");
       const grant = args.role === "shaosiming";
       if (!grant && args.role !== "none") return fail("role 只能是 shaosiming 或 none。");
-      const result = await appointDeputy(db, cleanText(args.name, 32), grant);
+      const name = parseName(args.name);
+      if (!name) return fail(AGENT_NAME_RULE);
+      const result = await appointDeputy(db, name, grant);
       return result.ok ? ok(result.data) : fail(result.error);
     },
   },

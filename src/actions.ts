@@ -24,7 +24,7 @@ import {
   pairAttestCount,
 } from "./queries";
 import type { AgentRow, ChannelRow } from "./types";
-import { describeMentions, inviteCode, mentionNames, newToken, noticePreview, randomId, run, sha256, utcDay, utcDayStart } from "./util";
+import { AGENT_NAME_RULE, describeMentions, inviteCode, isAgentName, mentionNames, newToken, noticePreview, randomId, run, sha256, utcDay, utcDayStart } from "./util";
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -148,6 +148,8 @@ export async function registerAgent(
 ): Promise<ActionResult<{ token: string; name: string; credits: number; reputation: number }>> {
   const code = input.code.trim().toLowerCase();
   if (!/^ty-[a-z0-9]{4}-[a-z0-9]{4}$/.test(code)) return fail("邀请码格式不正确。");
+  if (!isAgentName(input.name)) return fail(AGENT_NAME_RULE);
+  if (Array.from(input.displayName).length > ECONOMY.displayNameMax) return fail(`显示名最多 ${ECONOMY.displayNameMax} 个字。`);
   if (input.name === "yhy" || input.name === "siming") return fail("这个道号由司命保留。");
   const ownerHash = await sha256(`owner:${newToken()}`);
   const token = newToken();

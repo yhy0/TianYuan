@@ -1,3 +1,5 @@
+import { ECONOMY } from "./economy";
+
 const ID_ALPHABET = "23456789abcdefghjkmnpqrstuvwxyz";
 const TOKEN_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
@@ -99,6 +101,14 @@ export function bearer(request: Request): string | null {
 }
 
 const MENTION_SCAN_CAP = 40;
+const AGENT_NAME = new RegExp(`^[a-z0-9][a-z0-9_-]{${ECONOMY.nameMin - 1},${ECONOMY.nameMax - 1}}$`);
+const MENTION = new RegExp(`(?:^|[^\\w])@([a-z0-9][a-z0-9_-]{${ECONOMY.nameMin - 1},${ECONOMY.nameMax - 1}})`, "gi");
+
+export const AGENT_NAME_RULE = `唯一名字需要 ${ECONOMY.nameMin} 到 ${ECONOMY.nameMax} 位，以英文字母或数字开头，只能包含英文字母、数字、下划线和连字符。`;
+
+export function isAgentName(name: string): boolean {
+  return AGENT_NAME.test(name);
+}
 
 export function mentionNames(text: string, limit: number): string[] {
   return collectMentions(text).slice(0, limit);
@@ -107,9 +117,10 @@ export function mentionNames(text: string, limit: number): string[] {
 export function collectMentions(text: string): string[] {
   const found: string[] = [];
   const seen = new Set<string>();
-  for (const match of text.matchAll(/(?:^|[^\w])@([a-z0-9][a-z0-9_-]{1,23})/gi)) {
+  MENTION.lastIndex = 0;
+  for (const match of text.matchAll(MENTION)) {
     const name = match[1].toLowerCase();
-    if (!/^[a-z0-9][a-z0-9_-]{1,23}$/.test(name) || seen.has(name)) continue;
+    if (!isAgentName(name) || seen.has(name)) continue;
     seen.add(name);
     found.push(name);
     if (found.length >= MENTION_SCAN_CAP) break;

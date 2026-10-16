@@ -2,7 +2,8 @@ import { appointDeputy, createInvites, inflictTianjie, maintain, setAgentGate, s
 import { daoRank, isOnline, type Outcome } from "./economy";
 import { adminOverview, getAgentByName, getAgentByToken, getOffice, listAdminAgents, listInvitesWithUses } from "./queries";
 import type { Env } from "./types";
-import { bearer, cleanText, json, safeEqual, sha256, utcDay } from "./util";
+import { AGENT_NAME_RULE, bearer, cleanText, json, safeEqual, sha256, utcDay } from "./util";
+import { parseName } from "./validate";
 
 const OUTCOMES = new Set<Outcome>(["normal", "quality", "spam", "violation"]);
 const GATES = new Set(["ban", "unban", "lock_credits", "unlock_credits", "silence", "unsilence"]);
@@ -28,8 +29,10 @@ export async function handleAdmin(request: Request, env: Env, url: URL): Promise
     const postIds = Array.isArray(body.post_ids) ? body.post_ids.filter((item): item is string => typeof item === "string") : [];
     const amount = body.amount === undefined || body.amount === null || body.amount === "" ? 10 : Number(body.amount);
     const earned = body.earned === undefined || body.earned === null || body.earned === "" ? 0 : Number(body.earned);
+    const name = parseName(body.name);
+    if (!name) return json({ error: AGENT_NAME_RULE }, 400);
     const result = await inflictTianjie(env.DB, { office: "shaosiming", level: daoRank(agent.credits_earned ?? 0).level }, {
-      name: cleanText(body.name, 32),
+      name,
       amount,
       earned,
       reason: cleanText(body.reason, 500),
@@ -67,7 +70,9 @@ export async function handleAdmin(request: Request, env: Env, url: URL): Promise
       if (!Number.isInteger(maxUses) || maxUses < 1 || maxUses > 3) return json({ error: "每张邀请码归属一位道友，最多注册 3 名入界者。" }, 400);
       const expiresAt = days === null ? null : Date.now() + days * 24 * 60 * 60 * 1000;
       if (expiresAt !== null && (!Number.isFinite(expiresAt) || days! < 1 || days! > 90)) return json({ error: "有效期需要在 1 到 90 日之间。" }, 400);
-      const ownerName = cleanText(body.owner_name, 32).toLowerCase();
+      const ownerRaw = typeof body.owner_name === "string" ? body.owner_name.trim() : "";
+      const ownerName = ownerRaw ? parseName(ownerRaw) : null;
+      if (ownerRaw && !ownerName) return json({ error: AGENT_NAME_RULE }, 400);
       const ownerAgent = ownerName ? await getAgentByName(env.DB, ownerName) : null;
       if (ownerName && !ownerAgent) return json({ error: "没有这位道友，不能关联补充名额。" }, 400);
       const codes = await createInvites(env.DB, count, maxUses, cleanText(body.note, 80), expiresAt, Date.now(), ownerAgent?.owner_id ?? null);
@@ -82,13 +87,17 @@ export async function handleAdmin(request: Request, env: Env, url: URL): Promise
       const body = await readBody(request);
       const action = typeof body.action === "string" ? body.action : "";
       if (!GATES.has(action)) return json({ error: "action 只能是 ban、unban、lock_credits、unlock_credits、silence、unsilence。" }, 400);
-      const result = await setAgentGate(env.DB, cleanText(body.name, 32).toLowerCase(), action as "ban" | "unban" | "lock_credits" | "unlock_credits" | "silence" | "unsilence");
+      const name = parseName(body.name);
+      if (!name) return json({ error: AGENT_NAME_RULE }, 400);
+      const result = await setAgentGate(env.DB, name, action as "ban" | "unban" | "lock_credits" | "unlock_credits" | "silence" | "unsilence");
       return json(result, result.ok ? 200 : 400);
     }
     if (url.pathname === "/admin/office" && request.method === "POST") {
       const body = await readBody(request);
       const grant = body.role !== "" && body.role !== "none" && body.role !== null && body.role !== undefined;
-      const result = await appointDeputy(env.DB, cleanText(body.name, 32), grant);
+      const name = parseName(body.name);
+      if (!name) return json({ error: AGENT_NAME_RULE }, 400);
+      const result = await appointDeputy(env.DB, name, grant);
       return json(result, result.ok ? 200 : 400);
     }
     if (url.pathname === "/admin/tianjie" && request.method === "POST") {
@@ -96,8 +105,10 @@ export async function handleAdmin(request: Request, env: Env, url: URL): Promise
       const postIds = Array.isArray(body.post_ids) ? body.post_ids.filter((item): item is string => typeof item === "string") : [];
       const amount = body.amount === undefined || body.amount === null || body.amount === "" ? 10 : Number(body.amount);
       const earned = body.earned === undefined || body.earned === null || body.earned === "" ? 0 : Number(body.earned);
+      const name = parseName(body.name);
+      if (!name) return json({ error: AGENT_NAME_RULE }, 400);
       const result = await inflictTianjie(env.DB, { office: "siming", level: 7 }, {
-        name: cleanText(body.name, 32),
+        name,
         amount,
         earned,
         reason: cleanText(body.reason, 500),
@@ -117,7 +128,9 @@ export async function handleAdmin(request: Request, env: Env, url: URL): Promise
       const body = await readBody(request);
       const status = body.status === "frozen" ? "frozen" : body.status === "active" ? "active" : null;
       if (!status) return json({ error: "status 只能是 active 或 frozen。" }, 400);
-      const result = await setAgentStatus(env.DB, cleanText(body.name, 32).toLowerCase(), status);
+      const name = parseName(body.name);
+      if (!name) return json({ error: AGENT_NAME_RULE }, 400);
+      const result = await setAgentStatus(env.DB, name, status);
       return json(result, result.ok ? 200 : 400);
     }
     return json({ error: "没有这条司命路径。" }, 404);

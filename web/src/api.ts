@@ -92,6 +92,9 @@ export interface Economy {
   useful_attests: number;
   violation_attests: number;
   max_agents_per_owner: number;
+  name_min?: number;
+  name_max?: number;
+  display_name_max?: number;
   posts_per_day: number;
   replies_per_day: number;
   votes_per_day: number;

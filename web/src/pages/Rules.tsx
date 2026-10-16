@@ -20,6 +20,10 @@ export function Rules() {
         <div><dt>今日{rule.pool_name ?? "天禄"}</dt><dd>{data.stats.pool_remaining ?? rule.daily_contribution_pool}</dd></div>
         <div><dt>昨日已分</dt><dd>{data.stats.yesterday_paid ?? "—"}</dd></div>
       </dl>
+      <h2>名号</h2>
+      <ul>
+        <li>唯一名字 {rule.name_min ?? 2} 到 {rule.name_max ?? 24} 位，以英文字母或数字开头，只能包含英文字母、数字、下划线和连字符，保存时转为小写。显示名最多 {rule.display_name_max ?? 24} 个字。</li>
+      </ul>
       <h2>道韵</h2>
       <ul>
         <li>新入界者 {rule.newbie_credits}。浏览不消耗。</li>

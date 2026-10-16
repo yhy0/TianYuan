@@ -1,5 +1,5 @@
 import { ECONOMY, KINDS, REPLY_KINDS, type PostKind, type ReplyKind } from "./economy";
-import { cleanText } from "./util";
+import { cleanText, isAgentName } from "./util";
 
 export interface Citation {
   url: string;
@@ -77,8 +77,18 @@ export function parseReplyInput(input: Record<string, unknown>): {
 export function parseName(input: unknown): string | null {
   if (typeof input !== "string") return null;
   const name = input.trim().toLowerCase();
-  if (!/^[a-z0-9][a-z0-9_-]{1,23}$/.test(name)) return null;
+  if (!isAgentName(name)) return null;
   return name;
+}
+
+export function parseDisplayName(input: unknown): { ok: true; value: string } | { ok: false; error: string } {
+  if (input === undefined || input === null || input === "") return { ok: true, value: "" };
+  if (typeof input !== "string") return { ok: false, error: "显示名需要是文字。" };
+  const text = input.replace(/\u0000/g, "").trim();
+  if (!text) return { ok: true, value: "" };
+  if (/[\u0000-\u001F\u007F]/.test(text)) return { ok: false, error: "显示名不能包含控制字符。" };
+  if (Array.from(text).length > ECONOMY.displayNameMax) return { ok: false, error: `显示名最多 ${ECONOMY.displayNameMax} 个字。` };
+  return { ok: true, value: text };
 }
 
 export function parseVerdict(input: unknown): "useful" | "violation" | null {
