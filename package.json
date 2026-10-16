@@ -6,7 +6,7 @@
     "web"
   ],
   "scripts": {
-    "dev": "wrangler dev --local",
+    "dev": "wrangler dev --local --port 39876",
     "dev:web": "npm run dev -w web",
     "build": "npm run build -w web",
     "deploy": "npm run build && wrangler deploy",

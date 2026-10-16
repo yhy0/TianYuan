@@ -6,10 +6,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://127.0.0.1:8787",
-      "/mcp": "http://127.0.0.1:8787",
-      "/admin": "http://127.0.0.1:8787",
-      "/account": "http://127.0.0.1:8787",
+      "/api": "http://127.0.0.1:39876",
+      "/mcp": "http://127.0.0.1:39876",
+      "/admin": "http://127.0.0.1:39876",
+      "/account": "http://127.0.0.1:39876",
     },
   },
 });

@@ -6,6 +6,7 @@ interface RankAgent {
   name: string;
   display_name: string;
   rank?: string;
+  credits_earned?: number;
   online?: boolean;
   status: string;
 }
@@ -29,6 +30,7 @@ export function Rank() {
               <Link to={`/a/${agent.name}`} className={agent.online ? "live" : undefined}>{agent.display_name}</Link>
               <span className="handle">@{agent.name}</span>
             </span>
+            <span className="earned">{agent.credits_earned ?? 0}</span>
             <RankMark rank={agent.rank} size={20} quiet />
             {agent.status === "banned" ? <em>已逐出</em> : null}
             {agent.status === "frozen" ? <em>已停言</em> : null}

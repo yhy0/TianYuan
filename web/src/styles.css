@@ -37,7 +37,7 @@ h1 { font-size: clamp(1.55rem, 2.2vw, 2rem); line-height: 1.25; margin: 0.15rem 
 .post-title { font-size: clamp(1.5rem, 2.4vw, 1.9rem); line-height: 1.35; letter-spacing: 0.02em; margin: 0.15rem 0 0.45rem; }
 h2 { margin: 2rem 0 0.6rem; }
 
-.shell { max-width: 880px; margin: 0 auto; padding: 1.2rem 1.1rem 3rem; }
+.shell { max-width: 1560px; margin: 0 auto; padding: 1.1rem 1.4rem 3rem; }
 .top { display: flex; justify-content: space-between; gap: 1rem; align-items: center; padding-bottom: 1rem; border-bottom: 1px solid var(--line); }
 .head-right { display: flex; align-items: center; justify-content: flex-end; gap: 0.8rem; flex-wrap: wrap; }
 .account { position: relative; display: flex; align-items: center; gap: 0.45rem; }
@@ -96,9 +96,15 @@ button.who:hover { border-color: transparent; background: rgba(224, 196, 138, 0.
   .brand .wide-break { display: block; }
 }
 .mark { width: 46px; height: 46px; flex: none; display: block; border-radius: 50%; object-fit: cover; }
-nav { display: flex; gap: 0.3rem; flex-wrap: wrap; justify-content: flex-end; }
-nav a { color: var(--muted); padding: 0.35rem 0.55rem; border-radius: 999px; }
+nav { display: flex; gap: 0.3rem; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
+nav a { color: var(--muted); padding: 0.35rem 0.55rem; border-radius: 999px; border: 1px solid transparent; }
 nav a.active { color: var(--text); background: rgba(224, 196, 138, 0.12); text-decoration: none; }
+nav a.gate { margin-left: 0.45rem; color: var(--gold); border-color: rgba(224, 196, 138, 0.45); border-style: dashed; }
+nav a.gate.active { background: transparent; border-style: solid; color: var(--gold); }
+nav a.gate { margin-left: 0.45rem; border: 1px dashed rgba(224, 196, 138, 0.55); color: var(--gold); }
+nav a.gate.active { background: transparent; border-style: solid; border-color: var(--gold); color: var(--gold); }
+nav a.gate { margin-left: 0.55rem; color: var(--gold); box-shadow: inset 0 0 0 1px rgba(224, 196, 138, 0.45); }
+nav a.gate.active { color: var(--gold); background: transparent; box-shadow: inset 0 0 0 1px var(--gold); }
 main { padding-top: 1.6rem; }
 footer { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.85rem; }
 
@@ -125,7 +131,7 @@ footer { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 3rem; padding-to
   padding: 1rem 1.1rem;
 }
 .card h2 { font-size: 1.35rem; margin: 0.35rem 0; }
-.reply-body.clamped { position: relative; max-height: 6.6rem; overflow: hidden; }
+.reply-body.clamped { position: relative; max-height: 11rem; overflow: hidden; }
 .reply-body.clamped::after {
   content: "";
   position: absolute;
@@ -171,12 +177,18 @@ footer { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 3rem; padding-to
 .prose h2 { font-size: 1.45rem; margin: 1.6rem 0 0.45rem; }
 .prose h3 { font-size: 1.35rem; margin: 1.5rem 0 0.45rem; }
 .prose h4 { font-size: 1.08rem; margin: 1.15rem 0 0.35rem; }
+.read { min-width: 0; }
+.read.with-toc {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 13.5rem;
+  gap: 1.6rem;
+  align-items: start;
+}
 .toc {
-  position: fixed;
-  top: 6.2rem;
-  right: calc((100vw - 880px) / 2 - 12.4rem);
-  width: 11rem;
-  max-height: calc(100vh - 8.5rem);
+  position: sticky;
+  top: 1rem;
+  width: auto;
+  max-height: calc(100vh - 2rem);
   overflow: auto;
   z-index: 2;
 }
@@ -196,10 +208,11 @@ footer { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 3rem; padding-to
 .toc a:hover { color: var(--text); text-decoration: none; }
 .prose .table-wrap { margin: 0.65rem 0 0.85rem; }
 .prose table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 0.82rem; line-height: 1.45; }
-.prose th, .prose td { border-bottom: 1px solid var(--line); padding: 0.32rem 0.5rem; vertical-align: top; max-width: 14rem; }
+.prose th, .prose td { border-bottom: 1px solid var(--line); padding: 0.32rem 0.55rem; vertical-align: top; overflow-wrap: break-word; word-break: normal; }
 .prose th { color: var(--gold); font-weight: 600; }
 .prose img.figure { display: block; max-width: 100%; height: auto; margin: 0.7rem 0; border-radius: 12px; border: 1px solid var(--line); }
 .reply .prose { font-size: 0.92rem; }
+.reply .prose .table-wrap { max-width: 100%; }
 .reply .prose h2, .reply .prose h3, .reply .prose h4 { font-size: 1rem; margin: 0.85rem 0 0.28rem; letter-spacing: 0.01em; }
 .reply .prose table { font-size: 0.78rem; }
 .prose p { margin: 0.55rem 0; }
@@ -221,7 +234,9 @@ footer { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 3rem; padding-to
 .facts dt { color: var(--muted); font-size: 0.78rem; }
 .facts dd { margin: 0.2rem 0 0; font-family: "Songti SC", serif; font-size: 1.15rem; }
 .rank { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.45rem; }
-.rank li { display: grid; grid-template-columns: 2rem minmax(0, 1fr) auto auto; gap: 0.7rem; align-items: center; padding: 0.7rem 0; border-bottom: 1px solid var(--line); }
+.rank li { display: grid; grid-template-columns: 2rem minmax(0, 1fr) auto auto auto; gap: 0.7rem; align-items: center; padding: 0.7rem 0; border-bottom: 1px solid var(--line); }
+.rank .earned { color: var(--gold); font-variant-numeric: tabular-nums; min-width: 3.2rem; text-align: right; }
+.rank .earned::before { content: "道韵 "; color: var(--muted); font-size: 0.78rem; }
 .rank .who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.15rem 0.55rem; min-width: 0; }
 .rank .handle { color: var(--muted); font-size: 0.86rem; }
 .ord { color: var(--cinnabar); font-family: "Songti SC", serif; }
@@ -337,7 +352,8 @@ button.who .avatar { margin-right: 0.35rem; }
   nav a.active { background: rgba(122, 83, 24, 0.1); }
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 1080px) {
+  .read.with-toc { grid-template-columns: minmax(0, 1fr); }
   .toc { display: none; }
 }
 
@@ -387,7 +403,8 @@ button.who .avatar { margin-right: 0.35rem; }
   }
   pre { padding: 0.65rem; font-size: 0.78rem; }
   .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .rank li { grid-template-columns: 1.5rem minmax(0, 1fr) auto; }
+  .rank li { grid-template-columns: 1.5rem minmax(0, 1fr) auto auto; }
+  .rank .earned::before { content: ""; }
   .rank li em { display: none; }
   .thread .thread { margin-left: 0.35rem; padding-left: 0.45rem; }
   .ranks li { grid-template-columns: 24px 3.2rem 3.2rem minmax(0, 1fr); gap: 0.25rem 0.4rem; }

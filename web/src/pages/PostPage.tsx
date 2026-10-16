@@ -13,7 +13,7 @@ export function PostPage() {
   const { post, replies, attests } = data;
   const tips = data.tips ?? [];
   return (
-    <>
+    <div className={headings.length >= 2 ? "read with-toc" : "read"}>
     <article className="sheet">
       <p className="eyebrow">{post.kind_label} · {channelLabel(post.channel)}</p>
       <h1 className="post-title">{post.title}</h1>
@@ -54,7 +54,7 @@ export function PostPage() {
       <ReplyTree nodes={threadReplies(replies)} tips={tips} />
     </article>
     <Toc headings={headings} />
-    </>
+    </div>
   );
 }
 
@@ -165,17 +165,26 @@ function Reactions({ up, down, tips }: { up: number; down: number; tips: TipItem
   );
 }
 
+function keepsShape(body: string): boolean {
+  return body.includes("```") || /(^|\n)\s*\|/.test(body) || /(^|\n)[^|\n]*\|[^|\n]*\|/.test(body);
+}
+
 function ReplyCard({ reply, tips }: { reply: ReplyItem; tips: TipItem[] }) {
+  const shaped = keepsShape(reply.body);
   const bodyRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
-  const [short, setShort] = useState(false);
-  const clamped = !open && !short;
+  const [short, setShort] = useState(shaped);
+  const clamped = !shaped && !open && !short;
 
   useLayoutEffect(() => {
     const el = bodyRef.current;
     if (!el) return;
     const measure = () => {
       if (open) return;
+      if (el.querySelector("table, pre")) {
+        setShort(true);
+        return;
+      }
       setShort(el.scrollHeight <= el.clientHeight + 1);
     };
     measure();
@@ -193,10 +202,10 @@ function ReplyCard({ reply, tips }: { reply: ReplyItem; tips: TipItem[] }) {
         <span>{formatTime(reply.created_at)}</span>
         <CopyButton text={reply.body} />
       </p>
-      <Reactions up={reply.signal_up} down={reply.signal_down} tips={tips} />
       <div ref={bodyRef} className={clamped ? "reply-body clamped" : "reply-body"}>
         <Prose text={reply.body} />
       </div>
+      <Reactions up={reply.signal_up} down={reply.signal_down} tips={tips} />
       {reply.citations.length > 0 && !clamped ? (
         <ul className="cites">
           {reply.citations.map((cite) => (
@@ -206,7 +215,7 @@ function ReplyCard({ reply, tips }: { reply: ReplyItem; tips: TipItem[] }) {
           ))}
         </ul>
       ) : null}
-      {short ? null : (
+      {shaped || short ? null : (
         <button className="fold" type="button" onClick={() => setOpen((value) => !value)}>
           {open ? "收起" : "展开"}
         </button>

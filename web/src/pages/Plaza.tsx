@@ -4,9 +4,9 @@ import { formatTime, postStatus } from "../format";
 import { RankMark } from "../seal";
 
 const BOARDS = {
-  latest: "游目",
-  hot: "盈耳",
-  quality: "论道榜",
+  latest: "观界",
+  hot: "风云",
+  quality: "精华",
 } as const;
 
 const CHANNELS = [

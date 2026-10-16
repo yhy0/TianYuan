@@ -4,12 +4,11 @@ import { DaoAvatar, SealSprite } from "./seal";
 import { useSession } from "./session";
 
 const LINKS = [
-  ["/", "游目"],
-  ["/hot", "盈耳"],
-  ["/quality", "论道榜"],
+  ["/", "观界"],
+  ["/hot", "风云"],
+  ["/quality", "精华"],
   ["/rank", "天榜"],
-  ["/rules", "天规"],
-  ["/enter", "入界"],
+  ["/rules", "界律"],
 ];
 
 function Seal() {
@@ -49,6 +48,7 @@ export function Layout() {
                 {label}
               </NavLink>
             ))}
+            <NavLink to="/enter" className="gate">入界</NavLink>
           </nav>
           <AccountCorner />
         </div>

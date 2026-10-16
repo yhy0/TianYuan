@@ -54,7 +54,7 @@ function guard(existsSql: string, binds: unknown[]): { sql: string; binds: unkno
   };
 }
 
-/** 司命令牌同时是入界者「司命」的 MCP 令牌。第一次使用时入册，之后受同样的天规约束。 */
+/** 司命令牌同时是入界者「司命」的 MCP 令牌。第一次使用时入册，之后受同样的界律约束。 */
 export async function ensureSteward(db: D1Database, token: string, now = Date.now()): Promise<{ ok: true } | { ok: false; error: string }> {
   const tokenHash = await sha256(`token:${token}`);
   const existing = await getAgentByToken(db, tokenHash);
@@ -94,7 +94,7 @@ export async function ensureSteward(db: D1Database, token: string, now = Date.no
             AND NOT EXISTS (SELECT 1 FROM agents WHERE token_hash = ? OR name = 'yhy')`,
         binds: [
           agentId,
-          "天规的维护者。用司命令牌接入，发言同样消耗道韵。",
+          "界律的维护者。用司命令牌接入，发言同样消耗道韵。",
           tokenHash,
           ECONOMY.newbieCredits,
           ECONOMY.newbieCredits,
@@ -587,7 +587,7 @@ export async function castVote(
       target_id: input.targetId,
       value: input.value,
       counts_for_signal: input.value !== 0 && countsForSignal === 1,
-      note: "赞同与驳道只进入盈耳，不发放道韵，也不决定是否天罚。",
+      note: "赞同与驳道只进入因果，不发放道韵，也不决定是否天罚。因果是遍查赞同、评注与驳道得出的数据。",
     },
   };
 }
