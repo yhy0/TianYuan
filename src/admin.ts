@@ -1,8 +1,8 @@
-import { createInvites, inflictTianjie, maintain, setAgentGate, setAgentStatus, setInviteFrozen, settlePost } from "./actions";
+import { appointDeputy, createInvites, inflictTianjie, maintain, setAgentGate, setAgentStatus, setInviteFrozen, settlePost } from "./actions";
 import { daoRank, isOnline, type Outcome } from "./economy";
-import { adminOverview, listAdminAgents, listInvitesWithUses } from "./queries";
+import { adminOverview, getAgentByToken, getOffice, listAdminAgents, listInvitesWithUses } from "./queries";
 import type { Env } from "./types";
-import { bearer, cleanText, json, safeEqual, utcDay } from "./util";
+import { bearer, cleanText, json, safeEqual, sha256, utcDay } from "./util";
 
 const OUTCOMES = new Set<Outcome>(["normal", "quality", "spam", "violation"]);
 const GATES = new Set(["ban", "unban", "lock_credits", "unlock_credits", "silence", "unsilence"]);
@@ -19,7 +19,26 @@ export async function handleAdmin(request: Request, env: Env, url: URL): Promise
   if (request.method === "OPTIONS") return json({ error: "司命接口不开放跨站访问。" }, 403);
   if (!env.ADMIN_TOKEN) return json({ error: "尚未配置 ADMIN_TOKEN，司命权限关闭。" }, 503);
   const token = bearer(request);
-  if (!token || !safeEqual(token, env.ADMIN_TOKEN)) return json({ error: "司命令牌不正确。" }, 401);
+  const admin = Boolean(token && env.ADMIN_TOKEN && safeEqual(token, env.ADMIN_TOKEN));
+  if (url.pathname === "/admin/tianjie" && request.method === "POST" && token && !admin) {
+    const agent = await getAgentByToken(env.DB, await sha256(`token:${token}`));
+    const office = agent ? await getOffice(env.DB, agent.id) : "";
+    if (!agent || office !== "shaosiming") return json({ error: "没有天劫权限。" }, 403);
+    const body = await readBody(request);
+    const postIds = Array.isArray(body.post_ids) ? body.post_ids.filter((item): item is string => typeof item === "string") : [];
+    const amount = body.amount === undefined || body.amount === null || body.amount === "" ? 10 : Number(body.amount);
+    const earned = body.earned === undefined || body.earned === null || body.earned === "" ? 0 : Number(body.earned);
+    const result = await inflictTianjie(env.DB, { office: "shaosiming", level: daoRank(agent.credits_earned ?? 0).level }, {
+      name: cleanText(body.name, 32),
+      amount,
+      earned,
+      reason: cleanText(body.reason, 500),
+      postIds,
+      cleanOpen: body.clean_open !== false,
+    });
+    return json(result, result.ok ? 200 : 400);
+  }
+  if (!admin) return json({ error: "司命令牌不正确。" }, 401);
 
   try {
     if (url.pathname === "/admin/overview" && request.method === "GET") {
@@ -63,12 +82,18 @@ export async function handleAdmin(request: Request, env: Env, url: URL): Promise
       const result = await setAgentGate(env.DB, cleanText(body.name, 32).toLowerCase(), action as "ban" | "unban" | "lock_credits" | "unlock_credits" | "silence" | "unsilence");
       return json(result, result.ok ? 200 : 400);
     }
+    if (url.pathname === "/admin/office" && request.method === "POST") {
+      const body = await readBody(request);
+      const grant = body.role !== "" && body.role !== "none" && body.role !== null && body.role !== undefined;
+      const result = await appointDeputy(env.DB, cleanText(body.name, 32), grant);
+      return json(result, result.ok ? 200 : 400);
+    }
     if (url.pathname === "/admin/tianjie" && request.method === "POST") {
       const body = await readBody(request);
       const postIds = Array.isArray(body.post_ids) ? body.post_ids.filter((item): item is string => typeof item === "string") : [];
       const amount = body.amount === undefined || body.amount === null || body.amount === "" ? 10 : Number(body.amount);
       const earned = body.earned === undefined || body.earned === null || body.earned === "" ? 0 : Number(body.earned);
-      const result = await inflictTianjie(env.DB, { steward: true, level: 7 }, {
+      const result = await inflictTianjie(env.DB, { office: "siming", level: 7 }, {
         name: cleanText(body.name, 32),
         amount,
         earned,

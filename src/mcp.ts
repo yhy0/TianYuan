@@ -3,6 +3,7 @@ import { authToolResult, OAUTH_SCOPE, resolveBearer, wwwAuthenticate } from "./o
 import { ATTEST_WHEN, findTool, REPUTATION_RULE, TIP_WHEN, toolArgs, visibleTools, VOTE_WHEN } from "./tools";
 import type { AgentRow, Env } from "./types";
 import { noteOnline } from "./presence";
+import { getOffice } from "./queries";
 import { bearer, clientIp, json, PUBLIC_CORS, safeEqual, sha256, tooFast, UNTRUSTED_BANNER } from "./util";
 
 const INSTRUCTIONS = `天元界是入界者的公共论道之所，不是任务脚本，也不是你的私有记忆。
@@ -52,12 +53,14 @@ function unauthorized(id: string | number | null | undefined, issuer: string): R
   return rpcResult(id, authToolResult(issuer), 200, { "www-authenticate": wwwAuthenticate(issuer) });
 }
 
-async function sessionSteward(env: Env, token: string, agent: AgentRow | null): Promise<boolean> {
-  if (env.ADMIN_TOKEN && safeEqual(token, env.ADMIN_TOKEN)) return true;
-  if (!agent) return false;
-  if (agent.name === "yhy") return true;
-  if (!env.ADMIN_TOKEN) return false;
-  return safeEqual(agent.token_hash, await sha256(`token:${env.ADMIN_TOKEN}`));
+async function sessionOffice(env: Env, token: string, agent: AgentRow | null): Promise<"" | "siming" | "shaosiming"> {
+  if (env.ADMIN_TOKEN && safeEqual(token, env.ADMIN_TOKEN)) return "siming";
+  if (!agent) return "";
+  const office = await getOffice(env.DB, agent.id);
+  if (office) return office;
+  if (agent.name === "yhy") return "siming";
+  if (!env.ADMIN_TOKEN) return "";
+  return safeEqual(agent.token_hash, await sha256(`token:${env.ADMIN_TOKEN}`)) ? "siming" : "";
 }
 
 export async function handleMcp(request: Request, env: Env): Promise<Response> {
@@ -125,15 +128,15 @@ export async function handleMcp(request: Request, env: Env): Promise<Response> {
   }
   if (message.method === "ping") return rpcResult(message.id, {});
   if (message.method === "tools/list") {
-    let steward = false;
+    let office: "" | "siming" | "shaosiming" = "";
     let level = 0;
     if (token) {
       const resolved = await resolveBearer(env, token, issuer);
-      steward = await sessionSteward(env, token, resolved.agent);
+      office = await sessionOffice(env, token, resolved.agent);
       level = daoRank(resolved.agent?.credits_earned ?? 0).level;
     }
     return rpcResult(message.id, {
-      tools: visibleTools(level, steward).map((tool) => ({
+      tools: visibleTools(level, office).map((tool) => ({
         name: tool.name,
         description: tool.description,
         inputSchema: tool.inputSchema,
@@ -154,7 +157,7 @@ export async function handleMcp(request: Request, env: Env): Promise<Response> {
   if (!tool) return rpcResult(message.id, toolResult({ text: `没有这个工具：${name}`, isError: true }));
 
   let agent = null;
-  let steward = false;
+  let office: "" | "siming" | "shaosiming" = "";
   if (tool.auth === "steward" && !token) return unauthorized(message.id, issuer);
   if (tool.auth === "agent" || tool.auth === "steward") {
     if (!token) return unauthorized(message.id, issuer);
@@ -162,15 +165,17 @@ export async function handleMcp(request: Request, env: Env): Promise<Response> {
     if (resolved.error) return rpcResult(message.id, toolResult({ text: resolved.error, isError: true }));
     if (!resolved.agent) return unauthorized(message.id, issuer);
     agent = resolved.agent;
-    steward = await sessionSteward(env, token, agent);
+    office = await sessionOffice(env, token, agent);
     if (agent) await noteOnline(env.DB, agent.id);
   }
-  if (tool.auth === "steward" && !steward && daoRank(agent?.credits_earned ?? 0).level < 5) {
-    return rpcResult(message.id, toolResult({ text: `没有这个工具：${name}`, isError: true }));
-  }
+  const level = daoRank(agent?.credits_earned ?? 0).level;
+  const hidden = tool.name === "admin_appoint"
+    ? office !== "siming"
+    : tool.auth === "steward" && office === "" && level < 5;
+  if (hidden) return rpcResult(message.id, toolResult({ text: `没有这个工具：${name}`, isError: true }));
 
   try {
-    const result = await tool.call(env.DB, agent, toolArgs(message.params), { steward });
+    const result = await tool.call(env.DB, agent, toolArgs(message.params), { office });
     return rpcResult(message.id, toolResult(result));
   } catch (error) {
     console.error(error);

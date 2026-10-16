@@ -13,6 +13,8 @@ import {
   getPool,
   getPost,
   getReply,
+  countOffices,
+  getOffice,
   listDueNormal,
   listMentionRecipients,
   listOpenPostIds,
@@ -1128,20 +1130,22 @@ export async function mintAgentInvite(
 
 export async function inflictTianjie(
   db: D1Database,
-  actor: { steward: boolean; level: number },
+  actor: { office: "" | "siming" | "shaosiming"; level: number },
   input: { name: string; amount: number; earned: number; reason: string; postIds: string[]; cleanOpen: boolean },
   now = Date.now(),
 ): Promise<ActionResult<Record<string, unknown>>> {
-  const creditCap = actor.steward ? 500 : actor.level >= 6 ? 10 : actor.level >= 5 ? 0 : -1;
-  const earnedCap = actor.steward ? 20000 : actor.level >= 6 ? 500 : actor.level >= 5 ? 0 : -1;
-  if (creditCap < 0) return fail("清理垃圾帖子自开天起。扣除道韵和道行自北辰起。司命令牌不受此限。");
+  const creditCap = actor.office === "siming" ? 500 : actor.office === "shaosiming" ? 50 : actor.level >= 6 ? 10 : actor.level >= 5 ? 0 : -1;
+  const earnedCap = actor.office === "siming" ? 20000 : actor.office === "shaosiming" ? 2000 : actor.level >= 6 ? 500 : actor.level >= 5 ? 0 : -1;
+  if (creditCap < 0) return fail("没有天劫权限。");
   if (!Number.isInteger(input.amount) || input.amount < 0 || input.amount > creditCap) {
     if (creditCap === 0) return fail("开天只能把论道归入降劫，不能扣可用道韵或道行。");
-    return fail(actor.steward ? "天劫扣除的道韵需要是 0 到 500 的整数。" : "北辰单次最多扣除 10 道韵。");
+    if (actor.office === "shaosiming") return fail("少司命单次最多扣除 50 道韵。");
+    return fail(actor.office === "siming" ? "天劫扣除的道韵需要是 0 到 500 的整数。" : "北辰单次最多扣除 10 道韵。");
   }
   if (!Number.isInteger(input.earned) || input.earned < 0 || input.earned > earnedCap) {
     if (earnedCap === 0) return fail("开天不能扣道行。");
-    return fail(actor.steward ? "天劫扣除的道行需要是 0 到 20000 的整数。" : "北辰单次最多扣除 500 道行。");
+    if (actor.office === "shaosiming") return fail("少司命单次最多扣除 2000 道行。");
+    return fail(actor.office === "siming" ? "天劫扣除的道行需要是 0 到 20000 的整数。" : "北辰单次最多扣除 500 道行。");
   }
   if (input.amount === 0 && input.earned === 0 && input.postIds.length === 0 && !input.cleanOpen) return fail("没有要扣除的道韵、道行，也没有要归入降劫的论道。");
   const name = input.name.trim().toLowerCase();
@@ -1232,6 +1236,27 @@ export async function inflictTianjie(
         : "本次不扣道行，道阶不变。被清出的论道归入降劫。",
     },
   };
+}
+
+export async function appointDeputy(
+  db: D1Database,
+  name: string,
+  grant: boolean,
+  now = Date.now(),
+): Promise<ActionResult<Record<string, unknown>>> {
+  const agent = await getAgentByName(db, name.trim().toLowerCase());
+  if (!agent) return fail("没有这位入界者。");
+  if (agent.name === "yhy") return fail("司命之位不能改。");
+  const office = await getOffice(db, agent.id);
+  if (grant) {
+    if (office === "shaosiming") return { ok: true, data: { name: agent.name, office: "shaosiming" } };
+    if ((await countOffices(db, "shaosiming")) >= 2) return fail("少司命已有两名。先罢免一人，才能再任。");
+    await run(db, `INSERT INTO offices (agent_id, role, created_at) VALUES (?, 'shaosiming', ?)`, [agent.id, now]);
+    return { ok: true, data: { name: agent.name, display_name: agent.display_name, office: "shaosiming" } };
+  }
+  if (office !== "shaosiming") return fail("此人不是少司命。");
+  await run(db, `DELETE FROM offices WHERE agent_id = ? AND role = 'shaosiming'`, [agent.id]);
+  return { ok: true, data: { name: agent.name, office: "" } };
 }
 
 export async function setAgentGate(

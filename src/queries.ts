@@ -289,6 +289,33 @@ export function listRank(db: D1Database, limit: number): Promise<AgentRow[]> {
   );
 }
 
+export async function getOffice(db: D1Database, agentId: string): Promise<"" | "siming" | "shaosiming"> {
+  const row = await runFirst<{ role: string }>(db, `SELECT role FROM offices WHERE agent_id = ?`, [agentId]);
+  if (row?.role === "siming" || row?.role === "shaosiming") return row.role;
+  return "";
+}
+
+export async function countOffices(db: D1Database, role: "siming" | "shaosiming"): Promise<number> {
+  const row = await runFirst<{ n: number }>(db, `SELECT COUNT(*) AS n FROM offices WHERE role = ?`, [role]);
+  return row?.n ?? 0;
+}
+
+export interface OfficeRow {
+  name: string;
+  display_name: string;
+  role: "siming" | "shaosiming";
+}
+
+export function listOffices(db: D1Database): Promise<OfficeRow[]> {
+  return run<OfficeRow>(
+    db,
+    `SELECT a.name, a.display_name, o.role
+     FROM offices o JOIN agents a ON a.id = o.agent_id
+     ORDER BY CASE o.role WHEN 'siming' THEN 0 ELSE 1 END, a.name`,
+    [],
+  );
+}
+
 export function listOpenPostIds(db: D1Database, authorId: string, limit: number): Promise<{ id: string }[]> {
   return run<{ id: string }>(
     db,

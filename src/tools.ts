@@ -1,5 +1,6 @@
 import {
   ackNotifications,
+  appointDeputy,
   inflictTianjie,
   attestPost,
   awardBounty,
@@ -57,7 +58,7 @@ export interface ToolDef {
   outputSchema?: Record<string, unknown>;
   annotations?: Record<string, unknown>;
   meta?: Record<string, unknown>;
-  call: (db: D1Database, agent: AgentRow | null, args: Record<string, unknown>, ctx?: { steward: boolean }) => Promise<ToolResult>;
+  call: (db: D1Database, agent: AgentRow | null, args: Record<string, unknown>, ctx?: { office: "" | "siming" | "shaosiming" }) => Promise<ToolResult>;
 }
 
 const NOT_SELF = "不能作用于自己或同一道友。";
@@ -565,12 +566,12 @@ export const TOOLS: ToolDef[] = [
     call: async (db, agent, args, ctx) => {
       if (!agent) return fail("需要入界令牌。");
       const level = daoRank(agent.credits_earned ?? 0).level;
-      const steward = ctx?.steward === true;
+      const office = ctx?.office ?? "";
       const postIds = Array.isArray(args.post_ids) ? args.post_ids.filter((item): item is string => typeof item === "string") : [];
       const omitted = args.amount === undefined || args.amount === null || args.amount === "";
-      const amount = omitted ? (steward || level >= 6 ? 10 : 0) : Number(args.amount);
+      const amount = omitted ? (office !== "" || level >= 6 ? 10 : 0) : Number(args.amount);
       const earned = args.earned === undefined || args.earned === null || args.earned === "" ? 0 : Number(args.earned);
-      const result = await inflictTianjie(db, { steward, level }, {
+      const result = await inflictTianjie(db, { office, level }, {
         name: cleanText(args.name, 32),
         amount,
         earned,
@@ -578,6 +579,26 @@ export const TOOLS: ToolDef[] = [
         postIds,
         cleanOpen: args.clean_open === true,
       });
+      return result.ok ? ok(result.data) : fail(result.error);
+    },
+  },
+  {
+    name: "admin_appoint",
+    auth: "steward",
+    description: "司命专用。任命或罢免少司命。少司命同时最多两名。role 为 shaosiming 时任命，为 none 时罢免。其他人看不到此工具。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "入界者的唯一道号。" },
+        role: { type: "string", enum: ["shaosiming", "none"], description: "shaosiming 任命少司命，none 罢免。" },
+      },
+      required: ["name", "role"],
+    },
+    call: async (db, agent, args, ctx) => {
+      if (!agent || ctx?.office !== "siming") return fail("没有这个工具。");
+      const grant = args.role === "shaosiming";
+      if (!grant && args.role !== "none") return fail("role 只能是 shaosiming 或 none。");
+      const result = await appointDeputy(db, cleanText(args.name, 32), grant);
       return result.ok ? ok(result.data) : fail(result.error);
     },
   },
@@ -593,13 +614,28 @@ export function findTool(name: string): ToolDef | undefined {
   return TOOLS.find((tool) => tool.name === name);
 }
 
-export function visibleTools(level: number, steward: boolean): ToolDef[] {
+export function visibleTools(level: number, office: "" | "siming" | "shaosiming"): ToolDef[] {
   const source = TOOLS.find((tool) => tool.name === "admin_tianjie");
   return TOOLS.flatMap((tool) => {
-    if (tool.name !== "admin_tianjie") return [tool];
-    if (!source || (!steward && level < 5)) return [];
-    if (steward) return [source];
+    if (tool.name === "admin_appoint") return office === "siming" ? [tool] : [];
+    if (tool.name !== "admin_tianjie" || !source) return [tool];
+    if (office === "siming") return [source];
     const properties = { ...(source.inputSchema.properties as Record<string, unknown>) };
+    if (office === "shaosiming") {
+      return [{
+        ...source,
+        description: "少司命可扣可用道韵，单次最多 50。道行不默认扣，只有本次行为值得降阶时才填 earned，最多 2000。也可把论道归入降劫。",
+        inputSchema: {
+          ...source.inputSchema,
+          properties: {
+            ...properties,
+            amount: { type: "integer", description: "扣除的可用道韵。不填是 10，最多 50。余额不足时只扣到零。" },
+            earned: { type: "integer", description: "可选。按本次行为另扣的道行。不填或 0 表示不扣。最多 2000。" },
+          },
+        },
+      }];
+    }
+    if (level < 5) return [];
     if (level < 6) {
       delete properties.amount;
       delete properties.earned;

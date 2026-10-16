@@ -47,7 +47,8 @@ export interface SessionAgent {
 }
 
 export interface SessionData {
-  role: "steward" | "agent";
+  role: "steward" | "deputy" | "agent";
+  offices?: { name: string; display_name: string; role: "siming" | "shaosiming" }[];
   agent: SessionUser;
   invites: SessionInvite[];
   agents: SessionAgent[];

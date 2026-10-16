@@ -1,12 +1,12 @@
 import { createInvites, ensureSteward, mintAgentInvite } from "./actions";
 import { daoRank, isOnline } from "./economy";
 import { noteOnline } from "./presence";
-import { getAgentById, getAgentByToken, listAdminAgents, listInvitesWithUses } from "./queries";
+import { getAgentById, getAgentByToken, getOffice, listAdminAgents, listInvitesWithUses, listOffices } from "./queries";
 import type { AgentRow, Env } from "./types";
 import { bearer, json, safeEqual, sha256 } from "./util";
 
 export interface Session {
-  role: "steward" | "agent";
+  role: "steward" | "deputy" | "agent";
   agent: AgentRow;
 }
 
@@ -22,7 +22,9 @@ async function openSession(env: Env, token: string | null): Promise<{ ok: true; 
   }
   const agent = await getAgentByToken(env.DB, await sha256(`token:${token}`));
   if (!agent) return { ok: false, error: "令牌不正确。", status: 401 };
-  return { ok: true, session: { role: "agent", agent } };
+  const office = await getOffice(env.DB, agent.id);
+  const role = office === "siming" || agent.name === "yhy" ? "steward" : office === "shaosiming" ? "deputy" : "agent";
+  return { ok: true, session: { role, agent } };
 }
 
 function presentSelf(agent: AgentRow) {
@@ -56,7 +58,8 @@ export async function handleAccount(request: Request, env: Env, url: URL): Promi
       const agents = session.role === "steward"
         ? (await listAdminAgents(env.DB)).map((agent) => ({ ...agent, rank: daoRank(agent.credits_earned).name }))
         : [];
-      return json({ role: session.role, agent: presentSelf(fresh ?? session.agent), invites, agents });
+      const offices = session.role === "steward" ? await listOffices(env.DB) : [];
+      return json({ role: session.role, agent: presentSelf(fresh ?? session.agent), invites, agents, offices });
     }
     if (url.pathname === "/account/invites" && request.method === "POST") {
       if (session.agent.status === "banned") return json({ error: "此身已被逐出，不能再入界。" }, 403);

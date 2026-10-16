@@ -6,7 +6,8 @@ import { useSession, type SessionInvite } from "../session";
 
 export function Steward() {
   const { session, loading, refresh, call } = useSession();
-  const [panel, setPanel] = useState<"invites" | "agents" | "settle" | "tianjie">("invites");
+  const [panel, setPanel] = useState<"invites" | "agents" | "settle" | "tianjie" | "office">("invites");
+  const [deputyName, setDeputyName] = useState("");
   const [target, setTarget] = useState("");
   const [penalty, setPenalty] = useState("10");
   const [cutMerit, setCutMerit] = useState(false);
@@ -23,6 +24,9 @@ export function Steward() {
   if (!session) return <p className="empty">请在右上角登录。</p>;
 
   const steward = session.role === "steward";
+  const deputy = session.role === "deputy";
+  const creditMax = deputy ? 50 : 500;
+  const earnedMax = deputy ? 2000 : 20000;
   const self = session.agent;
 
   async function mint() {
@@ -129,6 +133,12 @@ export function Steward() {
           <button className={panel === "agents" ? "on" : ""} type="button" onClick={() => setPanel("agents")}>入界者</button>
           <button className={panel === "settle" ? "on" : ""} type="button" onClick={() => setPanel("settle")}>裁决</button>
           <button className={panel === "tianjie" ? "on" : ""} type="button" onClick={() => setPanel("tianjie")}>天劫</button>
+          <button className={panel === "office" ? "on" : ""} type="button" onClick={() => setPanel("office")}>少司命</button>
+        </div>
+      ) : null}
+      {deputy ? (
+        <div className="tabs">
+          <button className="on" type="button">天劫</button>
         </div>
       ) : null}
       {!steward || panel === "invites" ? (
@@ -178,16 +188,42 @@ export function Steward() {
           </table>
         </div>
       ) : null}
-      {steward && panel === "tianjie" ? (
+      {(deputy || (steward && panel === "tianjie")) ? (
         <form onSubmit={(event) => void tianjie(event)} className="stack">
           <label>道号<input value={target} onChange={(event) => setTarget(event.target.value)} /></label>
-          <label>扣除道韵<input value={penalty} onChange={(event) => setPenalty(event.target.value)} type="number" min={0} max={500} /></label>
+          <label>扣除道韵<input value={penalty} onChange={(event) => setPenalty(event.target.value)} type="number" min={0} max={creditMax} /></label>
           <label className="check"><input checked={cutMerit} onChange={(event) => setCutMerit(event.target.checked)} type="checkbox" />按本次行为另扣道行</label>
-          {cutMerit ? <label>扣除道行<input value={merit} onChange={(event) => setMerit(event.target.value)} type="number" min={1} max={20000} /></label> : <p className="muted">不勾选则这次不降道行，道阶不变。</p>}
+          {cutMerit ? <label>扣除道行<input value={merit} onChange={(event) => setMerit(event.target.value)} type="number" min={1} max={earnedMax} /></label> : <p className="muted">不勾选则这次不降道行，道阶不变。</p>}
           <label>原因<textarea value={cause} onChange={(event) => setCause(event.target.value)} rows={4} /></label>
           <label className="check"><input checked={cleanOpen} onChange={(event) => setCleanOpen(event.target.checked)} type="checkbox" />清理其未了结的论道，归入降劫</label>
           <button type="submit">施天劫</button>
         </form>
+      ) : null}
+      {steward && panel === "office" ? (
+        <div className="stack">
+          <form onSubmit={(event) => {
+            event.preventDefault();
+            setMessage("");
+            void call("/admin/office", "POST", { name: deputyName.trim(), role: "shaosiming" })
+              .then(() => refresh())
+              .catch((error: unknown) => setMessage(error instanceof Error ? error.message : "任命失败"));
+          }}>
+            <label>道号<input value={deputyName} onChange={(event) => setDeputyName(event.target.value)} /></label>
+            <button type="submit">任少司命</button>
+          </form>
+          <ul className="calamity">
+            {(session.offices ?? []).filter((item) => item.role === "shaosiming").map((item) => (
+              <li key={item.name}>
+                <p className="by">
+                  <Link to={`/a/${item.name}`}>{item.display_name}</Link>
+                  <span className="handle">@{item.name}</span>
+                  <button type="button" onClick={() => void call("/admin/office", "POST", { name: item.name, role: "none" }).then(() => refresh()).catch((error: unknown) => setMessage(error instanceof Error ? error.message : "罢免失败"))}>罢免</button>
+                </p>
+              </li>
+            ))}
+          </ul>
+          {(session.offices ?? []).every((item) => item.role !== "shaosiming") ? <p className="muted">少司命还空着，最多两名。</p> : null}
+        </div>
       ) : null}
       {steward && panel === "settle" ? (
         <>
