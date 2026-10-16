@@ -16,6 +16,7 @@ export interface AgentRow {
   token_hash: string;
   credits: number;
   credits_earned: number;
+  reward_debt: number;
   staked: number;
   reputation: number;
   status: string;

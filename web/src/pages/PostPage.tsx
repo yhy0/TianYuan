@@ -15,6 +15,7 @@ export function PostPage() {
   return (
     <div className={headings.length >= 2 ? "read with-toc" : "read"}>
     <article className="sheet">
+      <header className="article-header">
       <p className="eyebrow">{post.kind_label} · {channelLabel(post.channel)}</p>
       <h1 className="post-title">{post.title}</h1>
       <p className="by">
@@ -24,6 +25,7 @@ export function PostPage() {
         <CopyButton text={`${post.title}\n\n${post.body || ""}`} />
       </p>
       <Reactions up={post.signal_up} down={post.signal_down} tips={tips.filter((item) => item.target_type === "post" && item.target_id === post.id)} />
+      </header>
       <Prose text={post.body || ""} anchored />
       {post.citations && post.citations.length > 0 ? (
         <ul className="cites">
@@ -41,7 +43,8 @@ export function PostPage() {
         <div><dt>状态</dt><dd>{postStatus(post)}</dd></div>
       </dl>
       {post.settle_note ? <p className="note">{post.settle_note}</p> : null}
-      <h2>验证</h2>
+      <section className="post-section" aria-labelledby="attests-heading">
+      <h2 id="attests-heading">验证 <span className="section-count">{attests.length}</span></h2>
       {attests.length === 0 ? <p className="muted">尚无验证。</p> : null}
       {attests.map((item) => (
         <section key={item.id} className="reply">
@@ -49,9 +52,12 @@ export function PostPage() {
           <Prose text={item.reason} />
         </section>
       ))}
-      <h2>评注</h2>
+      </section>
+      <section className="post-section discussion" aria-labelledby="replies-heading">
+      <h2 id="replies-heading">评注 <span className="section-count">{replies.length}</span></h2>
       {replies.length === 0 ? <p className="muted">还没有评注。</p> : null}
       <ReplyTree nodes={threadReplies(replies)} tips={tips} />
+      </section>
     </article>
     <Toc headings={headings} />
     </div>
@@ -174,7 +180,8 @@ function ReplyCard({ reply, tips }: { reply: ReplyItem; tips: TipItem[] }) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [short, setShort] = useState(shaped);
-  const clamped = !shaped && !open && !short;
+  const preview = !shaped && !open;
+  const clamped = preview && !short;
 
   useLayoutEffect(() => {
     const el = bodyRef.current;
@@ -202,7 +209,7 @@ function ReplyCard({ reply, tips }: { reply: ReplyItem; tips: TipItem[] }) {
         <span>{formatTime(reply.created_at)}</span>
         <CopyButton text={reply.body} />
       </p>
-      <div ref={bodyRef} className={clamped ? "reply-body clamped" : "reply-body"}>
+      <div ref={bodyRef} className={`reply-body${preview ? " preview" : ""}${clamped ? " clamped" : ""}`}>
         <Prose text={reply.body} />
       </div>
       <Reactions up={reply.signal_up} down={reply.signal_down} tips={tips} />
@@ -216,7 +223,7 @@ function ReplyCard({ reply, tips }: { reply: ReplyItem; tips: TipItem[] }) {
         </ul>
       ) : null}
       {shaped || short ? null : (
-        <button className="fold" type="button" onClick={() => setOpen((value) => !value)}>
+        <button className="fold" type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
           {open ? "收起" : "展开"}
         </button>
       )}

@@ -22,6 +22,17 @@ export function SealSprite() {
   return <div className="seal-defs" aria-hidden="true" dangerouslySetInnerHTML={{ __html: sprite }} />;
 }
 
+function positionSealTip(host: HTMLSpanElement) {
+  const tip = host.querySelector<HTMLElement>(".seal-pop");
+  if (!tip) return;
+  tip.style.removeProperty("--tip-offset");
+  const bounds = tip.getBoundingClientRect();
+  if (!bounds.width) return;
+  const edge = 12;
+  const shift = Math.max(edge - bounds.left, Math.min(0, document.documentElement.clientWidth - edge - bounds.right));
+  tip.style.setProperty("--tip-offset", `${shift}px`);
+}
+
 export function DaoSeal({
   rank,
   size = 20,
@@ -43,7 +54,7 @@ export function DaoSeal({
   const ordinal = ORDINAL[info.level - 1] ?? String(info.level);
   const summary = `${info.name}，第${ordinal}阶，${info.realm}，道韵 ${info.min.toLocaleString("zh-CN")} 起。${info.line}`;
   return (
-    <span className={place === "below" ? "seal-host below" : "seal-host"} tabIndex={focusable ? 0 : undefined}>
+    <span className={place === "below" ? "seal-host below" : "seal-host"} tabIndex={focusable ? 0 : undefined} onPointerEnter={(event) => positionSealTip(event.currentTarget)} onFocus={(event) => positionSealTip(event.currentTarget)}>
       <svg className="seal" width={px} height={px} role={decorative ? undefined : "img"} aria-label={decorative ? undefined : summary} aria-hidden={decorative ? true : undefined} focusable="false">
         <use href={`#${id}`} width="100%" height="100%" />
       </svg>

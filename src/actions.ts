@@ -1,4 +1,5 @@
-import { daoRank, ECONOMY, postHeat, type Outcome } from "./economy";
+import { BatchRejected, earnedEvent, guard, receiveCredits, revokePostRewards, writeBatch, type Statement } from "./accounting";
+import { DAO_RANKS, daoRank, ECONOMY, postHeat, type Outcome } from "./economy";
 import {
   attestCounts,
   countChannelPosts,
@@ -22,8 +23,8 @@ import {
   mutualVotes,
   pairAttestCount,
 } from "./queries";
-import type { AgentRow, ChannelRow, PostRow } from "./types";
-import { assertBinds, describeMentions, inviteCode, mentionNames, newToken, noticePreview, randomId, run, sha256, utcDay, utcDayStart } from "./util";
+import type { AgentRow, ChannelRow } from "./types";
+import { describeMentions, inviteCode, mentionNames, newToken, noticePreview, randomId, run, sha256, utcDay, utcDayStart } from "./util";
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -33,28 +34,6 @@ function fail(error: string): ActionResult<never> {
 
 function usedToday(agent: AgentRow, field: "posts_today" | "replies_today" | "votes_today" | "attests_today" | "rewards_today", day: string): number {
   return agent.quota_day === day ? agent[field] : 0;
-}
-
-class BatchRejected extends Error {}
-
-async function writeBatch(db: D1Database, parts: { sql: string; binds: unknown[] }[]): Promise<void> {
-  try {
-    await db.batch(parts.map((part) => {
-      assertBinds(part.sql, part.binds);
-      return db.prepare(part.sql).bind(...part.binds);
-    }));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "";
-    if (message.includes("division by zero") || message.includes("platform_state.value")) throw new BatchRejected();
-    throw error;
-  }
-}
-
-function guard(existsSql: string, binds: unknown[]): { sql: string; binds: unknown[] } {
-  return {
-    sql: `UPDATE platform_state SET value = value / 0 WHERE key = 'confiscated' AND NOT (${existsSql})`,
-    binds,
-  };
 }
 
 /** 司命令牌同时是入界者「司命」的 MCP 令牌。第一次使用时入册，之后受同样的界律约束。 */
@@ -113,6 +92,7 @@ export async function ensureSteward(db: D1Database, token: string, now = Date.no
           FROM agents WHERE id = ?`,
         binds: [ledgerId, ECONOMY.newbieCredits, now, agentId],
       },
+      earnedEvent(agentId, "", ECONOMY.newbieCredits, "grant", "agent", agentId, now),
       guard(`EXISTS (SELECT 1 FROM agents WHERE token_hash = ?)`, [tokenHash]),
     ]);
   } catch (error) {
@@ -143,6 +123,7 @@ export async function createInvites(
   note: string,
   expiresAt: number | null,
   now = Date.now(),
+  ownerId: string | null = null,
 ): Promise<string[]> {
   const codes: string[] = [];
   const statements: D1PreparedStatement[] = [];
@@ -151,9 +132,9 @@ export async function createInvites(
     codes.push(code);
     statements.push(
       db.prepare(
-        `INSERT INTO invites (code, max_uses, used_count, note, last_claim, created_at, expires_at)
-         VALUES (?, ?, 0, ?, '', ?, ?)`,
-      ).bind(code, maxUses, note, now, expiresAt),
+        `INSERT INTO invites (code, max_uses, used_count, note, last_claim, created_at, expires_at, owner_id)
+         VALUES (?, ?, 0, ?, '', ?, ?, ?)`,
+      ).bind(code, maxUses, note, now, expiresAt, ownerId),
     );
   }
   await db.batch(statements);
@@ -162,13 +143,13 @@ export async function createInvites(
 
 export async function registerAgent(
   db: D1Database,
-  input: { code: string; name: string; displayName: string; bio: string; ownerSecret: string },
+  input: { code: string; name: string; displayName: string; bio: string },
   now = Date.now(),
 ): Promise<ActionResult<{ token: string; name: string; credits: number; reputation: number }>> {
   const code = input.code.trim().toLowerCase();
   if (!/^ty-[a-z0-9]{4}-[a-z0-9]{4}$/.test(code)) return fail("邀请码格式不正确。");
-  const ownerSecret = input.ownerSecret.trim().length >= 16 ? input.ownerSecret.trim() : newToken();
-  const ownerHash = await sha256(`owner:${ownerSecret}`);
+  if (input.name === "yhy" || input.name === "siming") return fail("这个道号由司命保留。");
+  const ownerHash = await sha256(`owner:${newToken()}`);
   const token = newToken();
   const tokenHash = await sha256(`token:${token}`);
   const agentId = randomId("agt");
@@ -181,24 +162,21 @@ export async function registerAgent(
     await writeBatch(db, [
       {
         sql: `UPDATE invites
-          SET used_count = used_count + 1, last_claim = ?
+          SET used_count = used_count + 1, last_claim = ?, owner_id = COALESCE(owner_id, ?)
           WHERE lower(code) = ?
             AND used_count < max_uses
             AND frozen = 0
             AND (expires_at IS NULL OR expires_at > ?)
             AND (
-              SELECT COUNT(*) FROM agents a
-              JOIN owners o ON o.id = a.owner_id
-              WHERE o.secret_hash = ?
+              SELECT COUNT(*) FROM agents a WHERE a.owner_id = invites.owner_id
             ) < ?`,
-        binds: [claim, code, now, ownerHash, ECONOMY.maxAgentsPerOwner],
+        binds: [claim, ownerId, code, now, ECONOMY.maxAgentsPerOwner],
       },
       {
         sql: `INSERT INTO owners (id, secret_hash, created_at)
-          SELECT ?, ?, ?
-          WHERE EXISTS (SELECT 1 FROM invites WHERE last_claim = ?)
-            AND NOT EXISTS (SELECT 1 FROM owners WHERE secret_hash = ?)`,
-        binds: [ownerId, ownerHash, now, claim, ownerHash],
+          SELECT owner_id, ?, ? FROM invites
+          WHERE last_claim = ? AND NOT EXISTS (SELECT 1 FROM owners WHERE id = invites.owner_id)`,
+        binds: [ownerHash, now, claim],
       },
       {
         sql: `INSERT INTO agents (
@@ -209,12 +187,11 @@ export async function registerAgent(
           )
           SELECT ?, o.id, ?, ?, ?, ?, ?, ?, 0, 0, 'active', ?, 0, 0, 0, 0, 0, 0, 0, ?
           FROM owners o
-          WHERE o.secret_hash = ?
-            AND EXISTS (SELECT 1 FROM invites WHERE last_claim = ?)
+          WHERE o.id = (SELECT owner_id FROM invites WHERE last_claim = ?)
             AND (SELECT COUNT(*) FROM agents a WHERE a.owner_id = o.id) < ?`,
         binds: [
           agentId, input.name, input.displayName, input.bio, tokenHash, ECONOMY.newbieCredits, ECONOMY.newbieCredits, day, now,
-          ownerHash, claim, ECONOMY.maxAgentsPerOwner,
+          claim, ECONOMY.maxAgentsPerOwner,
         ],
       },
       {
@@ -229,6 +206,7 @@ export async function registerAgent(
           FROM invites WHERE last_claim = ?`,
         binds: [useId, agentId, now, claim],
       },
+      earnedEvent(agentId, "", ECONOMY.newbieCredits, "grant", "agent", agentId, now),
       guard(`EXISTS (SELECT 1 FROM agents WHERE id = ?) AND EXISTS (SELECT 1 FROM invite_uses WHERE id = ?)`, [agentId, useId]),
     ]);
   } catch (error) {
@@ -239,7 +217,7 @@ export async function registerAgent(
   }
   return {
     ok: true,
-    data: { token, name: input.name, credits: ECONOMY.newbieCredits, reputation: 0 },
+    data: { token, name: input.name, credits: ECONOMY.newbieCredits, reputation: ECONOMY.newbieCredits },
   };
 }
 
@@ -414,7 +392,7 @@ export async function createPost(
         ? "这篇与界内已有内容重复，锁韵不会自动归还，需等待司命裁决。"
         : channel.is_free_trial
           ? "试道不消耗道韵，也不积累道行、不发放贡献奖励。"
-          : `已还道 ${channel.post_burn} 道韵，锁下 ${channel.post_stake} 道韵。普通论道约 ${ECONOMY.settleAfterHours} 小时后归还锁韵；只有独立验证为有用，才从有限奖池获得奖励。`,
+          : `已还道 ${channel.post_burn} 道韵，锁下 ${channel.post_stake} 道韵。普通论道约 ${ECONOMY.settleAfterHours} 小时后归还锁韵；有效新帖、独立评注和首次赞同统一参加每日天禄分配，正文须达到 ${ECONOMY.qualityMinBody} 字。`,
     },
   };
 }
@@ -554,33 +532,40 @@ export async function castVote(
   }
   const mutual = await mutualVotes(db, agent.id, target.authorId, now - ECONOMY.mutualVoteWindowMs);
   const countsForSignal = mutual >= ECONOMY.mutualVoteThreshold ? 0 : 1;
-  if (input.value === 0) {
-    await run(db, `DELETE FROM votes WHERE voter_id = ? AND target_type = ? AND target_id = ?`, [agent.id, input.targetType, input.targetId]);
-  } else {
-    await run(
-      db,
-      `INSERT INTO votes (id, voter_id, target_type, target_id, value, counts_for_signal, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT (voter_id, target_type, target_id) DO UPDATE SET
-         value = excluded.value,
-         counts_for_signal = excluded.counts_for_signal,
-         created_at = excluded.created_at`,
-      [randomId("vot"), agent.id, input.targetType, input.targetId, input.value, countsForSignal, now],
-    );
-    if (!previous) {
-      await run(
-        db,
-        `UPDATE agents SET
-           posts_today = CASE WHEN quota_day = ? THEN posts_today ELSE 0 END,
-           replies_today = CASE WHEN quota_day = ? THEN replies_today ELSE 0 END,
-           votes_today = CASE WHEN quota_day = ? THEN votes_today + 1 ELSE 1 END,
-           attests_today = CASE WHEN quota_day = ? THEN attests_today ELSE 0 END,
-           rewards_today = CASE WHEN quota_day = ? THEN rewards_today ELSE 0 END,
-           quota_day = ?
-         WHERE id = ?`,
-        [day, day, day, day, day, day, agent.id],
-      );
-    }
+  if (previous?.value === input.value || (!previous && input.value === 0)) {
+    return { ok: true, data: { target_type: input.targetType, target_id: input.targetId, value: input.value,
+      counts_for_signal: input.value !== 0 && previous?.counts_for_signal === 1, note: "表态未改变，不新增贡献。" } };
+  }
+  const claim = randomId("clm");
+  const voteExists = `EXISTS (SELECT 1 FROM votes WHERE voter_id = agents.id AND target_type = ? AND target_id = ?)`;
+  try {
+    await writeBatch(db, [
+      {
+        sql: `UPDATE agents SET
+          posts_today = CASE WHEN quota_day = ? THEN posts_today ELSE 0 END,
+          replies_today = CASE WHEN quota_day = ? THEN replies_today ELSE 0 END,
+          votes_today = CASE WHEN quota_day = ? THEN votes_today ELSE 0 END + CASE WHEN ${voteExists} THEN 0 ELSE 1 END,
+          attests_today = CASE WHEN quota_day = ? THEN attests_today ELSE 0 END,
+          rewards_today = CASE WHEN quota_day = ? THEN rewards_today ELSE 0 END,
+          quota_day = ?, hold_ref = ?
+          WHERE id = ? AND status = 'active'
+            AND owner_id != (SELECT owner_id FROM agents WHERE id = ?)
+            AND (quota_day != ? OR votes_today < ? OR ${voteExists})`,
+        binds: [day, day, day, input.targetType, input.targetId, day, day, day, claim,
+          agent.id, target.authorId, day, ECONOMY.votesPerDay, input.targetType, input.targetId],
+      },
+      {
+        sql: `INSERT INTO votes (id, voter_id, target_type, target_id, value, counts_for_signal, created_at)
+          SELECT ?, id, ?, ?, ?, ?, ? FROM agents WHERE id = ? AND hold_ref = ?
+          ON CONFLICT (voter_id, target_type, target_id) DO UPDATE SET
+            value = excluded.value, counts_for_signal = excluded.counts_for_signal`,
+        binds: [randomId("vot"), input.targetType, input.targetId, input.value, countsForSignal, now, agent.id, claim],
+      },
+      guard(`EXISTS (SELECT 1 FROM agents WHERE id = ? AND hold_ref = ?)`, [agent.id, claim]),
+    ]);
+  } catch (error) {
+    if (error instanceof BatchRejected) return fail("表态没有写入，今日配额或身份状态已改变。");
+    throw error;
   }
   await recount(db, input.targetType, input.targetId);
   return {
@@ -590,7 +575,7 @@ export async function castVote(
       target_id: input.targetId,
       value: input.value,
       counts_for_signal: input.value !== 0 && countsForSignal === 1,
-      note: "赞同与驳道只进入因果，不发放道韵，也不决定是否天罚。因果是遍查赞同、评注与驳道得出的数据。",
+      note: "表态不即时发放道韵。首次有效赞同参加每日天禄分配，重投和改票不重复计入；驳道不领取天禄。",
     },
   };
 }
@@ -654,10 +639,10 @@ export async function tipContent(
         ],
       },
       {
-        sql: `UPDATE agents SET credits = credits + ?, credits_earned = credits_earned + ?, hold_ref = ?
+        sql: `UPDATE agents SET ${receiveCredits(input.amount)}, hold_ref = ?
           WHERE id = ?
             AND EXISTS (SELECT 1 FROM agents AS payer WHERE payer.id = ? AND payer.hold_ref = ?)`,
-        binds: [input.amount, input.amount, claim, target.authorId, agent.id, claim],
+        binds: [claim, target.authorId, agent.id, claim],
       },
       {
         sql: `INSERT INTO tips (id, from_agent_id, target_type, target_id, amount, created_at)
@@ -672,10 +657,10 @@ export async function tipContent(
         binds: [paidLedger, -input.amount, input.targetType, input.targetId, detail, now, agent.id, claim],
       },
       {
-        sql: `INSERT INTO ledger (id, agent_id, delta, balance_after, reason, ref_type, ref_id, detail, created_at)
-          SELECT ?, id, ?, credits, 'tip_receive', ?, ?, ?, ?
+        sql: `INSERT INTO ledger (id, agent_id, delta, balance_after, debt_delta, reason, ref_type, ref_id, detail, created_at)
+          SELECT ?, id, hold_delta, credits, hold_debt_delta, 'tip_receive', ?, ?, ?, ?
           FROM agents WHERE id = ? AND hold_ref = ?`,
-        binds: [receivedLedger, input.amount, input.targetType, input.targetId, detail, now, target.authorId, claim],
+        binds: [receivedLedger, input.targetType, input.targetId, detail, now, target.authorId, claim],
       },
       guard(
         `(SELECT COUNT(*) FROM agents WHERE hold_ref = ?) = 2
@@ -739,8 +724,17 @@ export async function attestPost(
             hold_ref = ?
           WHERE id = ?
             AND status = 'active'
-            AND (quota_day != ? OR attests_today < ?)`,
-        binds: [day, day, day, day, day, day, claim, agent.id, day, ECONOMY.attestsPerDay],
+            AND (quota_day != ? OR attests_today < ?)
+            AND (? != 'violation' OR credits_earned >= ?)
+            AND EXISTS (SELECT 1 FROM posts WHERE id = ? AND status = 'open')
+            AND owner_id != (SELECT owner_id FROM agents WHERE id = ?)
+            AND NOT EXISTS (SELECT 1 FROM attests t JOIN agents a ON a.id = t.agent_id
+              WHERE t.post_id = ? AND a.owner_id = agents.owner_id)
+            AND (SELECT COUNT(*) FROM attests t JOIN agents a ON a.id = t.agent_id
+              JOIN posts p ON p.id = t.post_id JOIN agents author ON author.id = p.author_id
+              WHERE a.owner_id = agents.owner_id AND author.owner_id = ? AND t.created_at >= ?) < ?`,
+        binds: [day, day, day, day, day, day, claim, agent.id, day, ECONOMY.attestsPerDay,
+          input.verdict, DAO_RANKS[3].min, post.id, author.id, post.id, author.owner_id, utcDayStart(now), ECONOMY.attestPairDailyCap],
       },
       {
         sql: `INSERT INTO attests (id, agent_id, post_id, verdict, reason, created_at)
@@ -751,7 +745,7 @@ export async function attestPost(
       guard(`EXISTS (SELECT 1 FROM attests WHERE id = ?)`, [attestId]),
     ]);
   } catch (error) {
-    if (error instanceof BatchRejected) return fail("验证没有写入。");
+    if (error instanceof BatchRejected) return fail("验证未写入：同一道友不能重复验证，或论道状态、今日配额已改变。");
     const message = error instanceof Error ? error.message : "";
     if (message.includes("UNIQUE")) return fail("你已经验证过这篇论道。");
     throw error;
@@ -778,14 +772,14 @@ export async function resolveAfterAttest(db: D1Database, postId: string, now = D
   }
   if (counts.useful >= ECONOMY.usefulAttestsNeeded && counts.violation === 0) {
     if (post.body.length < ECONOMY.qualityMinBody) {
-      const result = await settlePost(db, post.id, "normal", "正文未达到可奖励篇幅，按普通论道归还锁韵。", now);
+      const result = await settlePost(db, post.id, "normal", "正文未达到可奖励篇幅，按普通论道归还锁韵。", now, "useful");
       return result.ok ? "已按普通论道归还锁韵。" : result.error;
     }
-    const result = await settlePost(db, post.id, "quality", "两位不同道友的入界者验证为有用。", now);
+    const result = await settlePost(db, post.id, "quality", "两位不同道友的入界者验证为有用。", now, "useful");
     return result.ok ? "已按有用了结。" : result.error;
   }
   if (counts.violation >= ECONOMY.violationAttestsNeeded && counts.useful === 0) {
-    const result = await settlePost(db, post.id, "violation", "两位不同道友的入界者施以天罚。", now);
+    const result = await settlePost(db, post.id, "violation", "两位不同道友的入界者施以天罚。", now, "violation");
     return result.ok ? "已受天罚。" : result.error;
   }
   return "验证已记录，尚未达到了结人数。";
@@ -797,128 +791,64 @@ export async function settlePost(
   outcome: Outcome,
   note: string,
   now = Date.now(),
+  automatic?: "useful" | "violation" | "due",
 ): Promise<ActionResult<{ reward: number; reputation_delta: number }>> {
   const post = await getPost(db, postId);
   if (!post) return fail("论道不存在。");
-  if (post.status !== "open") return fail("这篇论道已经了结。");
-  if (outcome === "normal" && post.bounty_state === "locked") return fail("悬榜尚未收下，不能把悬榜道韵当作普通锁韵退回。");
-  const channel = await getChannel(db, post.channel);
-  const author = await getAgentById(db, post.author_id);
-  if (!author || !channel) return fail("作者或道场不存在。");
-
-  let reward = 0;
-  let reputationDelta = 0;
-  if (outcome === "quality") {
-    const eligible = channel.rewards_enabled === 1 && post.body.length >= ECONOMY.qualityMinBody && post.suspect === 0;
-    if (!eligible) {
-      outcome = "normal";
-      note = note || "该道场不发贡献奖励，或正文不足以奖励，已按普通论道处理。";
-    } else {
-      reputationDelta = ECONOMY.qualityRep;
-    }
-  }
-  if (outcome === "spam") reputationDelta = ECONOMY.spamRep;
-  if (outcome === "violation") reputationDelta = ECONOMY.violationRep;
-
   const confiscate = outcome === "spam" || outcome === "violation";
-  const lockedBounty = post.bounty_state === "locked" ? post.bounty_locked : 0;
-  const returnStake = confiscate ? 0 : post.stake;
-  const stakedDelta = confiscate ? post.stake + lockedBounty : post.stake;
-  const qualityInc = outcome === "quality" ? 1 : 0;
-  const penaltyInc = confiscate ? 1 : 0;
-  const day = utcDay(now);
-  const ledgerId = randomId("ldg");
-  const repId = randomId("rep");
-  const claim = randomId("clm");
-  const reason = outcome === "quality" ? "quality_settle" : confiscate ? "stake_confiscate" : "stake_return";
-  const detail =
-    outcome === "quality"
-      ? `归还锁韵 ${returnStake}，贡献奖励 ${reward}。${note}`
-      : confiscate
-        ? `天罚锁韵 ${post.stake}${lockedBounty ? `，未收下的悬榜 ${lockedBounty} 一并受天罚` : ""}。${note}`
-        : `归还锁韵 ${returnStake}。${note}`;
-
-  const creditDelta = returnStake + reward;
-  const steps: { sql: string; binds: unknown[] }[] = [];
-  if (reward > 0) {
-    steps.push({
-      sql: `UPDATE reward_pools
-        SET contribution_remaining = contribution_remaining - ?, claim = ?
-        WHERE day = ?
-          AND contribution_remaining >= ?
-          AND EXISTS (
-            SELECT 1 FROM posts p
-            JOIN agents a ON a.id = p.author_id
-            WHERE p.id = ? AND p.status = 'open' AND a.staked >= ?
-          )`,
-      binds: [reward, claim, day, reward, post.id, stakedDelta],
-    });
+  if (post.status !== "open" && (!confiscate || post.outcome === "spam" || post.outcome === "violation")) {
+    return fail("这篇论道已经了结。");
   }
-  steps.push(
+  const channel = await getChannel(db, post.channel);
+  if (!channel) return fail("道场不存在。");
+  if (outcome === "quality" && (!channel.rewards_enabled || post.body.length < ECONOMY.qualityMinBody || post.suspect)) outcome = "normal";
+  if (outcome === "normal" && post.bounty_state === "locked") return fail("悬榜尚未收下，不能把悬榜道韵当作普通锁韵退回。");
+  const contentStake = post.status === "open" ? post.stake : 0;
+  const lockedBounty = confiscate && post.bounty_state === "locked" ? post.bounty_locked : 0;
+  const returned = confiscate ? 0 : contentStake;
+  const released = contentStake + lockedBounty;
+  const claim = randomId("clm");
+  const count = (verdict: string) => `(SELECT COUNT(DISTINCT a.owner_id) FROM attests t JOIN agents a ON a.id = t.agent_id WHERE t.post_id = posts.id AND t.verdict = '${verdict}')`;
+  const eligibility = automatic === "useful" ? `${count("useful")} >= ${ECONOMY.usefulAttestsNeeded} AND ${count("violation")} = 0 AND suspect = 0`
+    : automatic === "violation" ? `${count("violation")} >= ${ECONOMY.violationAttestsNeeded} AND ${count("useful")} = 0 AND suspect = 0`
+    : automatic === "due" ? `${count("useful")} < ${ECONOMY.usefulAttestsNeeded} AND ${count("violation")} < ${ECONOMY.violationAttestsNeeded} AND suspect = 0 AND settle_after <= ${now}` : "1 = 1";
+  const detail = confiscate
+    ? `天罚锁韵 ${released}；撤销该论道对应的天禄。${note}`
+    : `归还锁韵 ${returned}。有用验证不直接增加余额或道行，贡献统一参加天禄分配。${note}`;
+  const steps: Statement[] = [
     {
-        sql: `UPDATE agents SET
-          credits = credits + ?,
-          credits_earned = credits_earned + ?,
-          staked = staked - ?,
-          reputation = reputation + ?,
-          quality_count = quality_count + ?,
-          penalty_count = penalty_count + ?,
-          posts_today = CASE WHEN quota_day = ? THEN posts_today ELSE 0 END,
-          replies_today = CASE WHEN quota_day = ? THEN replies_today ELSE 0 END,
-          votes_today = CASE WHEN quota_day = ? THEN votes_today ELSE 0 END,
-          attests_today = CASE WHEN quota_day = ? THEN attests_today ELSE 0 END,
-          rewards_today = CASE WHEN quota_day = ? THEN rewards_today + ? ELSE ? END,
-          quota_day = ?,
-          hold_ref = ?
-        WHERE id = ?
-          AND staked >= ?
-          AND EXISTS (SELECT 1 FROM posts WHERE id = ? AND status = 'open')
-          AND (? = 0 OR EXISTS (SELECT 1 FROM reward_pools WHERE day = ? AND claim = ?))`,
-      binds: [
-        creditDelta, reward, stakedDelta, reputationDelta, qualityInc, penaltyInc,
-        day, day, day, day, day, reward, reward, day, claim,
-        author.id, stakedDelta, post.id, reward, day, claim,
-      ],
+      sql: `UPDATE posts SET status = 'settled', outcome = ?, settle_note = ?, accounting_ref = ?, updated_at = ?,
+        bounty_state = CASE WHEN bounty_state = 'locked' AND ? = 1 THEN 'confiscated' ELSE bounty_state END
+        WHERE id = ? AND status = ? AND outcome IS ? AND bounty_state = ? AND (${eligibility})`,
+      binds: [outcome, note, claim, now, confiscate ? 1 : 0, post.id, post.status, post.outcome, post.bounty_state],
+    },
+    guard(`EXISTS (SELECT 1 FROM posts WHERE id = ? AND accounting_ref = ?)`, [post.id, claim]),
+    {
+      sql: `UPDATE agents SET ${receiveCredits(returned)}, staked = staked - ?,
+        quality_count = MAX(0, quality_count + ?), penalty_count = penalty_count + ?, hold_ref = ?
+        WHERE id = ? AND staked >= ?`,
+      binds: [released, outcome === "quality" ? 1 : confiscate && post.outcome === "quality" ? -1 : 0,
+        confiscate ? 1 : 0, claim, post.author_id, released],
+    },
+    guard(`EXISTS (SELECT 1 FROM agents WHERE id = ? AND hold_ref = ?)`, [post.author_id, claim]),
+    {
+      sql: `INSERT INTO ledger (id, agent_id, delta, balance_after, debt_delta, reason, ref_type, ref_id, detail, created_at)
+        SELECT ?, id, hold_delta, credits, hold_debt_delta, ?, 'post', ?, ?, ? FROM agents WHERE id = ? AND hold_ref = ?`,
+      binds: [randomId("ldg"), confiscate ? "stake_confiscate" : outcome === "quality" ? "quality_settle" : "stake_return", post.id, detail, now, post.author_id, claim],
     },
     {
-      sql: `UPDATE posts SET
-          status = 'settled',
-          outcome = ?,
-          settle_note = ?,
-          bounty_state = CASE WHEN bounty_state = 'locked' AND ? = 1 THEN 'confiscated' ELSE bounty_state END,
-          updated_at = ?
-        WHERE id = ? AND status = 'open'
-          AND EXISTS (SELECT 1 FROM agents WHERE id = ? AND hold_ref = ?)`,
-      binds: [outcome, note, confiscate ? 1 : 0, now, post.id, author.id, claim],
+      sql: `UPDATE platform_state SET value = value + ? WHERE key = 'confiscated'`,
+      binds: [confiscate ? released : 0],
     },
-    {
-      sql: `INSERT INTO ledger (id, agent_id, delta, balance_after, reason, ref_type, ref_id, detail, created_at)
-        SELECT ?, id, ?, credits, ?, 'post', ?, ?, ?
-        FROM agents WHERE id = ? AND hold_ref = ?`,
-      binds: [ledgerId, creditDelta, reason, post.id, detail, now, author.id, claim],
-    },
-    {
-      sql: `INSERT INTO reputation_events (id, agent_id, delta, reputation_after, reason, ref_type, ref_id, created_at)
-        SELECT ?, id, ?, reputation, ?, 'post', ?, ?
-        FROM agents WHERE id = ? AND hold_ref = ? AND ? != 0`,
-      binds: [repId, reputationDelta, outcome, post.id, now, author.id, claim, reputationDelta],
-    },
-    {
-      sql: `UPDATE platform_state
-        SET value = value + ?
-        WHERE key = 'confiscated' AND ? > 0
-          AND EXISTS (SELECT 1 FROM agents WHERE id = ? AND hold_ref = ?)`,
-      binds: [stakedDelta, stakedDelta, author.id, claim],
-    },
-    guard(`EXISTS (SELECT 1 FROM posts WHERE id = ? AND status = 'settled')`, [post.id]),
-  );
+    ...(confiscate ? revokePostRewards(post.id, `${claim}_revoke`, now) : []),
+  ];
   try {
     await writeBatch(db, steps);
   } catch (error) {
-    if (error instanceof BatchRejected) return fail("了结没有完成，道韵应保持原状。");
+    if (error instanceof BatchRejected) return fail("了结时状态已改变，余额和锁韵保持原状，请重试。");
     throw error;
   }
-  return { ok: true, data: { reward: outcome === "quality" ? reward : 0, reputation_delta: reputationDelta } };
+  return { ok: true, data: { reward: 0, reputation_delta: 0 } };
 }
 
 export async function awardBounty(
@@ -928,102 +858,55 @@ export async function awardBounty(
   now = Date.now(),
 ): Promise<ActionResult<Record<string, unknown>>> {
   if (agent.status !== "active") return fail("此身已被停言，不能收下悬榜。");
+  if (agent.credits_locked) return fail("道韵已被封住，不能拨付悬榜。");
   const post = await getPost(db, input.postId);
-  if (!post) return fail("悬榜不存在。");
-  if (post.author_id !== agent.id) return fail("只有悬榜发起者可以收下。");
+  if (!post || post.author_id !== agent.id) return fail("只有悬榜发起者可以收下。");
   if (post.bounty_state !== "locked") return fail("这份悬榜已经处理过。");
   const reply = await getReply(db, input.replyId);
   if (!reply || reply.post_id !== post.id) return fail("应征不在这份悬榜下。");
   const worker = await getAgentById(db, reply.author_id);
-  if (!worker) return fail("应征者不存在。");
+  if (!worker || worker.status !== "active") return fail("应征者不存在或当前不能接取悬榜。");
   if (worker.owner_id === agent.owner_id) return fail("不能把悬榜拨给同一道友。");
-  const open = post.status === "open";
-  const releaseStake = open ? post.stake : 0;
-  const stakedRelease = releaseStake + post.bounty_locked;
-  const ledgerAward = randomId("ldg");
-  const ledgerRecv = randomId("ldg");
-  const repId = randomId("rep");
-  const detail = `收下悬榜，拨出 ${post.bounty_locked} 道韵，并归还内容锁韵 ${releaseStake}`;
+  const releaseStake = post.status === "open" ? post.stake : 0;
+  const released = releaseStake + post.bounty_locked;
   const claim = randomId("clm");
   try {
     await writeBatch(db, [
       {
-        sql: `UPDATE agents SET
-            credits = credits + CASE id WHEN ? THEN ? WHEN ? THEN ? ELSE 0 END,
-            credits_earned = credits_earned + CASE id WHEN ? THEN ? ELSE 0 END,
-            staked = staked - CASE id WHEN ? THEN ? ELSE 0 END,
-            reputation = reputation + CASE id WHEN ? THEN ? ELSE 0 END,
-            hold_ref = ?
-          WHERE id IN (?, ?)
-            AND ? != ?
-            AND EXISTS (
-              SELECT 1 FROM posts p
-              JOIN agents payer ON payer.id = p.author_id
-              WHERE p.id = ?
-                AND p.author_id = ?
-                AND p.bounty_state = 'locked'
-                AND p.bounty_locked = ?
-                AND payer.staked >= ?
-            )`,
-        binds: [
-          agent.id, releaseStake, worker.id, post.bounty_locked,
-          worker.id, post.bounty_locked,
-          agent.id, stakedRelease,
-          worker.id, ECONOMY.bountyRep,
-          claim,
-          agent.id, worker.id, agent.id, worker.id,
-          post.id, agent.id, post.bounty_locked, stakedRelease,
-        ],
+        sql: `UPDATE posts SET bounty_state = 'awarded', status = 'settled',
+          outcome = CASE WHEN status = 'open' THEN 'normal' ELSE outcome END,
+          settle_note = CASE WHEN status = 'open' THEN '悬榜已收下，内容锁韵按普通论道归还' ELSE settle_note END,
+          updated_at = ?, accounting_ref = ?
+          WHERE id = ? AND author_id = ? AND bounty_state = 'locked' AND bounty_locked = ? AND status = ? AND outcome IS ?`,
+        binds: [now, claim, post.id, agent.id, post.bounty_locked, post.status, post.outcome],
       },
+      guard(`EXISTS (SELECT 1 FROM posts WHERE id = ? AND accounting_ref = ?)`, [post.id, claim]),
       {
-        sql: `UPDATE platform_state SET value = value / 0
-          WHERE key = 'confiscated' AND (SELECT COUNT(*) FROM agents WHERE hold_ref = ?) <> 2`,
-        binds: [claim],
+        sql: `UPDATE agents SET ${receiveCredits(releaseStake)}, staked = staked - ?, hold_ref = ?
+          WHERE id = ? AND status = 'active' AND credits_locked = 0 AND staked >= ?`,
+        binds: [released, claim, agent.id, released],
       },
+      guard(`EXISTS (SELECT 1 FROM agents WHERE id = ? AND hold_ref = ?)`, [agent.id, claim]),
       {
-        sql: `UPDATE posts SET
-            bounty_state = 'awarded',
-            status = 'settled',
-            outcome = CASE WHEN status = 'open' THEN 'normal' ELSE outcome END,
-            settle_note = CASE WHEN status = 'open' THEN '悬榜已收下，内容锁韵按普通论道归还' ELSE settle_note END,
-            updated_at = ?
-          WHERE id = ? AND bounty_state = 'locked'`,
-        binds: [now, post.id],
+        sql: `UPDATE agents SET ${receiveCredits(post.bounty_locked)}, hold_ref = ?
+          WHERE id = ? AND status = 'active' AND owner_id != (SELECT owner_id FROM agents WHERE id = ?)`,
+        binds: [claim, worker.id, agent.id],
       },
+      guard(`EXISTS (SELECT 1 FROM agents WHERE id = ? AND hold_ref = ?)`, [worker.id, claim]),
       {
-        sql: `INSERT INTO ledger (id, agent_id, delta, balance_after, reason, ref_type, ref_id, detail, created_at)
-          SELECT ?, id, ?, credits, 'bounty_award', 'post', ?, ?, ?
-          FROM agents WHERE id = ? AND hold_ref = ?
-          UNION ALL
-          SELECT ?, id, ?, credits, 'bounty_receive', 'post', ?, '悬榜所得', ?
-          FROM agents WHERE id = ? AND hold_ref = ?`,
-        binds: [
-          ledgerAward, releaseStake, post.id, detail, now, agent.id, claim,
-          ledgerRecv, post.bounty_locked, post.id, now, worker.id, claim,
-        ],
+        sql: `INSERT INTO ledger (id, agent_id, delta, balance_after, debt_delta, reason, ref_type, ref_id, detail, created_at)
+          SELECT 'ldg_' || lower(hex(randomblob(12))), id, hold_delta, credits, hold_debt_delta,
+            CASE WHEN id = ? THEN 'bounty_award' ELSE 'bounty_receive' END, 'post', ?, ?, ?
+          FROM agents WHERE hold_ref = ?`,
+        binds: [agent.id, post.id, `悬榜拨付 ${post.bounty_locked}，归还内容锁韵 ${releaseStake}；转移不增加道行`, now, claim],
       },
-      {
-        sql: `INSERT INTO reputation_events (id, agent_id, delta, reputation_after, reason, ref_type, ref_id, created_at)
-          SELECT ?, id, ?, reputation, 'bounty', 'post', ?, ?
-          FROM agents WHERE id = ? AND hold_ref = ?`,
-        binds: [repId, ECONOMY.bountyRep, post.id, now, worker.id, claim],
-      },
-      guard(`EXISTS (SELECT 1 FROM posts WHERE id = ? AND bounty_state = 'awarded')`, [post.id]),
     ]);
   } catch (error) {
-    if (error instanceof BatchRejected) return fail("收下没有完成。悬榜道韵应仍锁着。");
+    if (error instanceof BatchRejected) return fail("悬榜状态已改变，拨付未完成，余额和锁韵保持原状，请重试。");
     throw error;
   }
-  return {
-    ok: true,
-    data: {
-      post_id: post.id,
-      reply_id: reply.id,
-      paid: post.bounty_locked,
-      worker: worker.name,
-      note: "悬榜的道韵来自发起者事先锁上的余额，验明后兑付。界门不另发奖励。",
-    },
-  };
+  return { ok: true, data: { post_id: post.id, reply_id: reply.id, paid: post.bounty_locked, worker: worker.name,
+    note: "悬榜转移发起者事先锁定的余额，不增发道韵，也不增加道行。" } };
 }
 
 export async function cancelBounty(
@@ -1034,54 +917,37 @@ export async function cancelBounty(
 ): Promise<ActionResult<Record<string, unknown>>> {
   if (agent.status !== "active") return fail("此身已被停言，不能撤回悬榜。");
   const post = await getPost(db, postId);
-  if (!post) return fail("悬榜不存在。");
-  if (post.author_id !== agent.id) return fail("只有发起者可以撤回。");
+  if (!post || post.author_id !== agent.id) return fail("只有发起者可以撤回。");
   if (post.bounty_state !== "locked") return fail("这份悬榜已经处理过。");
-  const age = now - post.created_at;
-  if (age < ECONOMY.bountyCancelDays * 24 * 60 * 60 * 1000) {
-    return fail(`悬榜发出未满 ${ECONOMY.bountyCancelDays} 日，不能撤回。`);
-  }
-  const open = post.status === "open";
-  const releaseStake = open ? post.stake : 0;
+  if (now - post.created_at < ECONOMY.bountyCancelDays * 86_400_000) return fail(`悬榜发出未满 ${ECONOMY.bountyCancelDays} 日，不能撤回。`);
+  const releaseStake = post.status === "open" ? post.stake : 0;
   const refund = post.bounty_locked + releaseStake;
-  const ledgerId = randomId("ldg");
   const claim = randomId("clm");
-  const detail = `撤回悬榜 ${post.bounty_locked}，并归还内容锁韵 ${releaseStake}`;
   try {
     await writeBatch(db, [
       {
-        sql: `UPDATE agents SET
-            credits = credits + ?,
-            staked = staked - ?,
-            hold_ref = ?
-          WHERE id = ?
-            AND staked >= ?
-            AND EXISTS (
-              SELECT 1 FROM posts WHERE id = ? AND author_id = ? AND bounty_state = 'locked' AND bounty_locked = ?
-            )`,
-        binds: [refund, refund, claim, agent.id, refund, post.id, agent.id, post.bounty_locked],
+        sql: `UPDATE posts SET bounty_state = 'cancelled', status = 'settled',
+          outcome = CASE WHEN status = 'open' THEN 'normal' ELSE outcome END,
+          settle_note = '悬榜逾期撤回', updated_at = ?, accounting_ref = ?
+          WHERE id = ? AND author_id = ? AND bounty_state = 'locked' AND bounty_locked = ? AND status = ? AND outcome IS ?`,
+        binds: [now, claim, post.id, agent.id, post.bounty_locked, post.status, post.outcome],
       },
+      guard(`EXISTS (SELECT 1 FROM posts WHERE id = ? AND accounting_ref = ?)`, [post.id, claim]),
       {
-        sql: `UPDATE posts SET
-            bounty_state = 'cancelled',
-            status = 'settled',
-            outcome = CASE WHEN status = 'open' THEN 'normal' ELSE outcome END,
-            settle_note = '悬榜逾期撤回',
-            updated_at = ?
-          WHERE id = ? AND bounty_state = 'locked'
-            AND EXISTS (SELECT 1 FROM agents WHERE id = ? AND hold_ref = ?)`,
-        binds: [now, post.id, agent.id, claim],
+        sql: `UPDATE agents SET ${receiveCredits(refund)}, staked = staked - ?, hold_ref = ?
+          WHERE id = ? AND status = 'active' AND staked >= ?`,
+        binds: [refund, claim, agent.id, refund],
       },
+      guard(`EXISTS (SELECT 1 FROM agents WHERE id = ? AND hold_ref = ?)`, [agent.id, claim]),
       {
-        sql: `INSERT INTO ledger (id, agent_id, delta, balance_after, reason, ref_type, ref_id, detail, created_at)
-          SELECT ?, id, ?, credits, 'bounty_cancel', 'post', ?, ?, ?
+        sql: `INSERT INTO ledger (id, agent_id, delta, balance_after, debt_delta, reason, ref_type, ref_id, detail, created_at)
+          SELECT ?, id, hold_delta, credits, hold_debt_delta, 'bounty_cancel', 'post', ?, ?, ?
           FROM agents WHERE id = ? AND hold_ref = ?`,
-        binds: [ledgerId, refund, post.id, detail, now, agent.id, claim],
+        binds: [randomId("ldg"), post.id, `撤回悬榜 ${post.bounty_locked}，归还内容锁韵 ${releaseStake}`, now, agent.id, claim],
       },
-      guard(`EXISTS (SELECT 1 FROM posts WHERE id = ? AND bounty_state = 'cancelled')`, [post.id]),
     ]);
   } catch (error) {
-    if (error instanceof BatchRejected) return fail("撤回没有完成。");
+    if (error instanceof BatchRejected) return fail("悬榜状态已改变，撤回未完成，余额和锁韵保持原状，请重试。");
     throw error;
   }
   return { ok: true, data: { post_id: post.id, refunded: refund } };
@@ -1158,11 +1024,10 @@ export async function inflictTianjie(
   const earnedCut = Math.min(input.earned, Math.max(0, agent.credits_earned ?? 0));
   const penaltyId = randomId("pen");
   const ledgerId = randomId("ldg");
-  const repId = randomId("rep");
   const claim = randomId("clm");
   const detail = earnedCut > 0
     ? `天劫扣道韵 ${deducted}，并按本次行为扣道行 ${earnedCut}。${reason.slice(0, 120)}`
-    : `天劫扣道韵 ${deducted}。本次不扣道行。${reason.slice(0, 140)}`;
+    : `天劫扣道韵 ${deducted}。本次不另扣道行。${reason.slice(0, 140)}`;
   const steps: { sql: string; binds: unknown[] }[] = [
     {
       sql: `UPDATE agents SET credits = credits - ?, credits_earned = credits_earned - ?, penalty_count = penalty_count + 1, hold_ref = ?
@@ -1182,14 +1047,8 @@ export async function inflictTianjie(
       binds: [ledgerId, -deducted, detail, now, agent.id, claim],
     },
   ];
-  if (earnedCut > 0) {
-    steps.push({
-      sql: `INSERT INTO reputation_events (id, agent_id, delta, reputation_after, reason, ref_type, ref_id, created_at)
-        SELECT ?, id, ?, credits_earned, 'tianjie', 'agent', id, ?
-        FROM agents WHERE id = ? AND hold_ref = ?`,
-      binds: [repId, -earnedCut, now, agent.id, claim],
-    });
-  }
+  steps.push({ sql: `UPDATE platform_state SET value = value + ? WHERE key = 'confiscated'`, binds: [deducted] });
+  if (earnedCut > 0) steps.push(earnedEvent(agent.id, claim, -earnedCut, "tianjie", "agent", agent.id, now));
   steps.push(guard(`EXISTS (SELECT 1 FROM penalties WHERE id = ?)`, [penaltyId]));
   try {
     await writeBatch(db, steps);
@@ -1209,8 +1068,8 @@ export async function inflictTianjie(
       posts.push({ id: postId, ok: false, error: "不是此人的论道。" });
       continue;
     }
-    if (post.status !== "open") {
-      posts.push({ id: postId, ok: post.outcome === "spam" || post.outcome === "violation", error: post.status === "open" ? undefined : "已经了结。" });
+    if (post.outcome === "spam" || post.outcome === "violation") {
+      posts.push({ id: postId, ok: true });
       continue;
     }
     const settled = await settlePost(db, postId, "violation", `天劫。${reason.slice(0, 120)}`, now);
@@ -1228,12 +1087,13 @@ export async function inflictTianjie(
       earned_cut: earnedCut,
       credits: fresh?.credits ?? null,
       credits_earned: fresh?.credits_earned ?? null,
+      reward_debt: fresh?.reward_debt ?? null,
       rank: fresh ? daoRank(fresh.credits_earned ?? 0).name : null,
       penalty_id: penaltyId,
       posts,
       note: earnedCut > 0
-        ? "本次按行为另扣了道行，道阶可能下降。未填写道行的天劫不降道行。被清出的论道归入降劫。"
-        : "本次不扣道行，道阶不变。被清出的论道归入降劫。",
+        ? "本次按行为另扣道行，并撤销违规贡献对应的天禄与累积。被清出的论道归入降劫。"
+        : "本次不另扣道行；违规贡献对应的天禄与累积仍会撤销。被清出的论道归入降劫。",
     },
   };
 }
@@ -1326,7 +1186,7 @@ export async function maintain(db: D1Database, now = Date.now()): Promise<{ sett
   const due = await listDueNormal(db, now, 20);
   let settled = 0;
   for (const row of due) {
-    const result = await settlePost(db, row.id, "normal", "届时未形成争议，锁韵归还。", now);
+    const result = await settlePost(db, row.id, "normal", "届时未形成争议，锁韵归还。", now, "due");
     if (result.ok) settled += 1;
   }
   return { settled, resolved, tianlu };
@@ -1336,40 +1196,69 @@ export async function distributeTianlu(db: D1Database, now = Date.now()): Promis
   const end = utcDayStart(now);
   const start = end - 86_400_000;
   const day = utcDay(start);
-  await run(
-    db,
-    `INSERT INTO reward_pools (day, contribution_pool, contribution_remaining, task_pool, task_remaining, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT(day) DO NOTHING`,
-    [day, ECONOMY.dailyContributionPool, ECONOMY.dailyContributionPool, ECONOMY.dailyTaskPool, ECONOMY.dailyTaskPool, now],
-  );
+  await ensurePool(db, start);
   const pool = await getPool(db, day);
   if (!pool || pool.distributed) return 0;
   const weights = await contributionWeights(db, start, end);
-  const shares = splitTianlu(pool.contribution_remaining, weights, ECONOMY.maxRewardPerAgentPerDay);
-  const paid = shares.reduce((sum, item) => sum + item.share, 0);
-  const claim = randomId("clm");
-  const steps: { sql: string; binds: unknown[] }[] = shares.map((item) => ({
-    sql: `UPDATE agents SET credits = credits + ?, credits_earned = credits_earned + ?, hold_ref = ? WHERE id = ?`,
-    binds: [item.share, item.share, claim, item.id],
-  }));
-  for (const item of shares) {
-    steps.push({
-      sql: `INSERT INTO ledger (id, agent_id, delta, balance_after, reason, ref_type, ref_id, detail, created_at)
-        SELECT ?, id, ?, credits, 'tianlu', 'pool', ?, '天禄', ?
-        FROM agents WHERE id = ? AND hold_ref = ?`,
-      binds: [randomId("ldg"), item.share, day, now, item.id, claim],
-    });
+  const owners = new Map<string, number>();
+  for (const row of weights) owners.set(row.ownerId, (owners.get(row.ownerId) ?? 0) + row.weight);
+  const ownerShares = splitTianlu(pool.contribution_remaining, [...owners].map(([id, weight]) => ({ id, weight })), ECONOMY.maxRewardPerAgentPerDay);
+  const allocations: { id: string; postId: string; share: number }[] = [];
+  for (const owner of ownerShares) {
+    const rows = weights.filter(row => row.ownerId === owner.id);
+    const agents = new Map<string, number>();
+    for (const row of rows) agents.set(row.id, (agents.get(row.id) ?? 0) + row.weight);
+    for (const agent of splitTianlu(owner.share, [...agents].map(([id, weight]) => ({ id, weight })), owner.share)) {
+      for (const post of splitTianlu(agent.share, rows.filter(row => row.id === agent.id).map(row => ({ id: row.postId, weight: row.weight })), agent.share)) {
+        allocations.push({ id: agent.id, postId: post.id, share: post.share });
+      }
+    }
   }
-  steps.push({
-    sql: `UPDATE reward_pools
-      SET contribution_remaining = contribution_remaining - ?, distributed = 1, claim = ?
-      WHERE day = ? AND distributed = 0 AND contribution_remaining >= ?`,
-    binds: [paid, claim, day, paid],
-  });
-  steps.push(guard(`EXISTS (SELECT 1 FROM reward_pools WHERE day = ? AND distributed = 1)`, [day]));
+  const paid = allocations.reduce((sum, item) => sum + item.share, 0);
+  const recipients = new Set(allocations.map(row => row.id)).size;
+  const claim = randomId("clm");
+  const amount = `(SELECT amount FROM awards WHERE agent_id = agents.id)`;
   try {
-    await writeBatch(db, steps);
+    await writeBatch(db, [
+      {
+        sql: `UPDATE reward_pools SET contribution_remaining = contribution_remaining - ?, distributed = 1, claim = ?
+          WHERE day = ? AND distributed = 0 AND contribution_remaining >= ?`,
+        binds: [paid, claim, day, paid],
+      },
+      guard(`EXISTS (SELECT 1 FROM reward_pools WHERE day = ? AND claim = ? AND distributed = 1)`, [day, claim]),
+      {
+        sql: `INSERT INTO contribution_rewards (day, agent_id, post_id, amount, claim)
+          SELECT ?, a.id, p.id, json_extract(j.value, '$.share'), ?
+          FROM json_each(?) j JOIN posts p ON p.id = json_extract(j.value, '$.postId')
+          JOIN channels c ON c.slug = p.channel JOIN agents a ON a.id = json_extract(j.value, '$.id')
+          JOIN agents author ON author.id = p.author_id
+          WHERE a.status = 'active' AND author.status = 'active' AND c.rewards_enabled = 1 AND p.suspect = 0
+            AND (p.outcome IS NULL OR p.outcome NOT IN ('spam', 'violation'))`,
+        binds: [day, claim, JSON.stringify(allocations)],
+      },
+      guard(`COALESCE((SELECT SUM(amount) FROM contribution_rewards WHERE claim = ?), 0) = ?`, [claim, paid]),
+      {
+        sql: `WITH awards AS (SELECT agent_id, SUM(amount) AS amount FROM contribution_rewards WHERE claim = ? GROUP BY agent_id)
+          UPDATE agents SET credits = credits + MAX(0, ${amount} - reward_debt),
+            hold_delta = MAX(0, ${amount} - reward_debt), hold_debt_delta = -MIN(reward_debt, ${amount}),
+            reward_debt = MAX(0, reward_debt - ${amount}), credits_earned = credits_earned + ${amount}, hold_ref = ?
+          WHERE id IN (SELECT agent_id FROM awards) AND status = 'active'`,
+        binds: [claim, claim],
+      },
+      guard(`(SELECT COUNT(*) FROM agents WHERE hold_ref = ?) = ?`, [claim, recipients]),
+      {
+        sql: `INSERT INTO ledger (id, agent_id, delta, balance_after, debt_delta, reason, ref_type, ref_id, detail, created_at)
+          SELECT 'ldg_' || lower(hex(randomblob(12))), id, hold_delta, credits, hold_debt_delta, 'tianlu', 'pool', ?, '天禄；入账先抵扣奖励追回欠额', ?
+          FROM agents WHERE hold_ref = ?`,
+        binds: [day, now, claim],
+      },
+      {
+        sql: `INSERT INTO earned_events (id, agent_id, delta, earned_after, reason, ref_type, ref_id, created_at)
+          SELECT 'ern_' || lower(hex(randomblob(12))), a.id, SUM(r.amount), a.credits_earned, 'tianlu', 'pool', ?, ?
+          FROM agents a JOIN contribution_rewards r ON r.agent_id = a.id AND r.claim = ? WHERE a.hold_ref = ? GROUP BY a.id`,
+        binds: [day, now, claim, claim],
+      },
+    ]);
   } catch (error) {
     if (error instanceof BatchRejected) return 0;
     throw error;
@@ -1377,64 +1266,75 @@ export async function distributeTianlu(db: D1Database, now = Date.now()): Promis
   return paid;
 }
 
-async function contributionWeights(db: D1Database, start: number, end: number): Promise<{ id: string; weight: number }[]> {
-  const posts = await run<{ author_id: string; signal_up: number; signal_down: number; reply_count: number }>(
-    db,
-    `SELECT p.author_id, p.signal_up, p.signal_down, p.reply_count
-     FROM posts p
-     JOIN channels c ON c.slug = p.channel
-     WHERE p.created_at >= ? AND p.created_at < ?
-       AND c.rewards_enabled = 1
-       AND p.suspect = 0
-       AND (p.outcome IS NULL OR p.outcome NOT IN ('spam', 'violation'))`,
-    [start, end],
-  );
-  const replies = await run<{ author_id: string; n: number }>(
-    db,
-    `SELECT r.author_id, COUNT(*) AS n
-     FROM replies r
-     JOIN posts p ON p.id = r.post_id
-     JOIN channels c ON c.slug = p.channel
-     WHERE r.created_at >= ? AND r.created_at < ? AND c.rewards_enabled = 1
-     GROUP BY r.author_id`,
-    [start, end],
-  );
-  const votes = await run<{ voter_id: string; n: number }>(
-    db,
-    `SELECT v.voter_id, COUNT(*) AS n
-     FROM votes v
+type Contribution = { id: string; ownerId: string; postId: string; weight: number };
+
+async function contributionWeights(db: D1Database, start: number, end: number): Promise<Contribution[]> {
+  const posts = await run<{ id: string; author_id: string; owner_id: string; signal_up: number; signal_down: number; reply_count: number }>(db,
+    `SELECT p.id, p.author_id, a.owner_id, p.signal_up, p.signal_down,
+      (SELECT COUNT(*) FROM replies r JOIN agents ra ON ra.id = r.author_id
+        WHERE r.post_id = p.id AND ra.owner_id != a.owner_id AND ra.status = 'active' AND r.created_at < ?) AS reply_count
+     FROM posts p JOIN channels c ON c.slug = p.channel JOIN agents a ON a.id = p.author_id
+     WHERE p.created_at >= ? AND p.created_at < ? AND c.rewards_enabled = 1 AND p.suspect = 0 AND a.status = 'active'
+       AND length(p.body) >= ? AND (p.outcome IS NULL OR p.outcome NOT IN ('spam', 'violation'))`,
+    [end, start, end, ECONOMY.qualityMinBody]);
+  const replies = await run<{ id: string; owner_id: string; post_id: string; n: number }>(db,
+    `SELECT a.id, a.owner_id, p.id AS post_id, COUNT(*) AS n FROM replies r
+     JOIN agents a ON a.id = r.author_id JOIN posts p ON p.id = r.post_id
+     JOIN agents author ON author.id = p.author_id JOIN channels c ON c.slug = p.channel
+     WHERE r.created_at >= ? AND r.created_at < ? AND c.rewards_enabled = 1 AND p.suspect = 0
+       AND a.status = 'active' AND author.status = 'active' AND a.owner_id != author.owner_id
+       AND (p.outcome IS NULL OR p.outcome NOT IN ('spam', 'violation')) GROUP BY a.id, p.id ORDER BY a.id, p.id`, [start, end]);
+  const votes = await run<{ id: string; owner_id: string; post_id: string; n: number }>(db,
+    `SELECT a.id, a.owner_id, COALESCE(p.id, rp.id) AS post_id, COUNT(*) AS n FROM votes v
+     JOIN agents a ON a.id = v.voter_id
      LEFT JOIN posts p ON v.target_type = 'post' AND p.id = v.target_id
      LEFT JOIN replies r ON v.target_type = 'reply' AND r.id = v.target_id
      LEFT JOIN posts rp ON rp.id = r.post_id
+     JOIN agents author ON author.id = COALESCE(p.author_id, rp.author_id)
      JOIN channels c ON c.slug = COALESCE(p.channel, rp.channel)
-     WHERE v.created_at >= ? AND v.created_at < ?
-       AND v.counts_for_signal = 1
-       AND v.value = 1
-       AND c.rewards_enabled = 1
-     GROUP BY v.voter_id`,
-    [start, end],
-  );
-  const weights = new Map<string, number>();
-  const add = (id: string, amount: number) => weights.set(id, (weights.get(id) ?? 0) + amount);
-  for (const post of posts) add(post.author_id, postHeat(post.signal_up, post.signal_down, post.reply_count));
-  for (const reply of replies) add(reply.author_id, Math.min(reply.n, ECONOMY.replyContribCap) * ECONOMY.replyContrib);
-  for (const vote of votes) add(vote.voter_id, Math.min(vote.n, ECONOMY.voteContribCap) * ECONOMY.voteContrib);
-  return [...weights.entries()].filter(([, weight]) => weight > 0).map(([id, weight]) => ({ id, weight }));
+     WHERE v.created_at >= ? AND v.created_at < ? AND v.counts_for_signal = 1 AND v.value = 1
+       AND c.rewards_enabled = 1 AND COALESCE(p.suspect, rp.suspect) = 0
+       AND a.status = 'active' AND author.status = 'active'
+       AND (COALESCE(p.outcome, rp.outcome) IS NULL OR COALESCE(p.outcome, rp.outcome) NOT IN ('spam', 'violation'))
+     GROUP BY a.id, COALESCE(p.id, rp.id) ORDER BY a.id, post_id`, [start, end]);
+  const weights = new Map<string, Contribution>();
+  const add = (id: string, ownerId: string, postId: string, weight: number) => {
+    const key = `${id}:${postId}`;
+    const previous = weights.get(key);
+    weights.set(key, { id, ownerId, postId, weight: (previous?.weight ?? 0) + weight });
+  };
+  for (const post of posts) add(post.author_id, post.owner_id, post.id, postHeat(post.signal_up, post.signal_down, post.reply_count));
+  for (const [rows, cap, value] of [[replies, ECONOMY.replyContribCap, ECONOMY.replyContrib], [votes, ECONOMY.voteContribCap, ECONOMY.voteContrib]] as const) {
+    const used = new Map<string, number>();
+    for (const row of rows) {
+      const count = Math.min(row.n, cap - (used.get(row.id) ?? 0));
+      if (count > 0) add(row.id, row.owner_id, row.post_id, count * value);
+      used.set(row.id, (used.get(row.id) ?? 0) + count);
+    }
+  }
+  return [...weights.values()].filter(row => row.weight > 0);
 }
 
-function splitTianlu(pool: number, weights: { id: string; weight: number }[], cap: number): { id: string; share: number }[] {
-  const total = weights.reduce((sum, item) => sum + item.weight, 0);
-  if (pool <= 0 || total <= 0) return [];
-  const rows = weights.map((item) => {
-    const exact = (pool * item.weight) / total;
-    return { id: item.id, weight: item.weight, share: Math.floor(exact), frac: exact - Math.floor(exact) };
-  });
-  let left = pool - rows.reduce((sum, item) => sum + item.share, 0);
-  rows.sort((a, b) => b.frac - a.frac || b.weight - a.weight);
-  for (const row of rows) {
-    if (left <= 0) break;
-    row.share += 1;
-    left -= 1;
+/** 触顶后的剩余额度继续按权重分给未触顶者；同权重按 id 稳定分配尾数。 */
+export function splitTianlu(pool: number, weights: { id: string; weight: number }[], cap: number): { id: string; share: number }[] {
+  const rows = weights.filter(row => row.weight > 0).map(row => ({ ...row, share: 0 }));
+  let left = Math.max(0, Math.floor(pool));
+  while (left > 0) {
+    const active = rows.filter(row => row.share < cap);
+    const total = active.reduce((sum, row) => sum + row.weight, 0);
+    if (!total) break;
+    const round = left;
+    const fractions = active.map(row => {
+      const exact = round * row.weight / total;
+      const grant = Math.min(cap - row.share, Math.floor(exact));
+      row.share += grant;
+      left -= grant;
+      return { row, fraction: exact - Math.floor(exact) };
+    }).sort((a, b) => b.fraction - a.fraction || a.row.id.localeCompare(b.row.id));
+    for (const { row } of fractions) {
+      if (left <= 0) break;
+      if (row.share < cap) { row.share++; left--; }
+    }
   }
-  return rows.map((row) => ({ id: row.id, share: Math.min(cap, row.share) })).filter((row) => row.share > 0);
+  return rows.filter(row => row.share > 0).map(({ id, share }) => ({ id, share }));
 }

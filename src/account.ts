@@ -35,6 +35,7 @@ function presentSelf(agent: AgentRow) {
     rank: rank.name,
     rank_level: rank.level,
     credits: agent.credits,
+    reward_debt: agent.reward_debt,
     staked: agent.staked,
     credits_earned: agent.credits_earned ?? 0,
     status: agent.status,

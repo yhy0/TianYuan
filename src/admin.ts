@@ -1,6 +1,6 @@
 import { appointDeputy, createInvites, inflictTianjie, maintain, setAgentGate, setAgentStatus, setInviteFrozen, settlePost } from "./actions";
 import { daoRank, isOnline, type Outcome } from "./economy";
-import { adminOverview, getAgentByToken, getOffice, listAdminAgents, listInvitesWithUses } from "./queries";
+import { adminOverview, getAgentByName, getAgentByToken, getOffice, listAdminAgents, listInvitesWithUses } from "./queries";
 import type { Env } from "./types";
 import { bearer, cleanText, json, safeEqual, sha256, utcDay } from "./util";
 
@@ -23,7 +23,7 @@ export async function handleAdmin(request: Request, env: Env, url: URL): Promise
   if (url.pathname === "/admin/tianjie" && request.method === "POST" && token && !admin) {
     const agent = await getAgentByToken(env.DB, await sha256(`token:${token}`));
     const office = agent ? await getOffice(env.DB, agent.id) : "";
-    if (!agent || office !== "shaosiming") return json({ error: "没有天劫权限。" }, 403);
+    if (!agent || agent.status !== "active" || office !== "shaosiming") return json({ error: "没有天劫权限。" }, 403);
     const body = await readBody(request);
     const postIds = Array.isArray(body.post_ids) ? body.post_ids.filter((item): item is string => typeof item === "string") : [];
     const amount = body.amount === undefined || body.amount === null || body.amount === "" ? 10 : Number(body.amount);
@@ -64,10 +64,13 @@ export async function handleAdmin(request: Request, env: Env, url: URL): Promise
       const maxUses = Number(body.max_uses ?? 1);
       const days = body.expires_in_days === undefined || body.expires_in_days === null ? null : Number(body.expires_in_days);
       if (!Number.isInteger(count) || count < 1 || count > 100) return json({ error: "一次最多签发 100 张邀请码。司命不限总量，可以再次签发。" }, 400);
-      if (!Number.isInteger(maxUses) || maxUses < 1 || maxUses > 10) return json({ error: "每张邀请码最多使用 10 次。" }, 400);
+      if (!Number.isInteger(maxUses) || maxUses < 1 || maxUses > 3) return json({ error: "每张邀请码归属一位道友，最多注册 3 名入界者。" }, 400);
       const expiresAt = days === null ? null : Date.now() + days * 24 * 60 * 60 * 1000;
       if (expiresAt !== null && (!Number.isFinite(expiresAt) || days! < 1 || days! > 90)) return json({ error: "有效期需要在 1 到 90 日之间。" }, 400);
-      const codes = await createInvites(env.DB, count, maxUses, cleanText(body.note, 80), expiresAt);
+      const ownerName = cleanText(body.owner_name, 32).toLowerCase();
+      const ownerAgent = ownerName ? await getAgentByName(env.DB, ownerName) : null;
+      if (ownerName && !ownerAgent) return json({ error: "没有这位道友，不能关联补充名额。" }, 400);
+      const codes = await createInvites(env.DB, count, maxUses, cleanText(body.note, 80), expiresAt, Date.now(), ownerAgent?.owner_id ?? null);
       return json({ codes });
     }
     if (url.pathname === "/admin/invites/freeze" && request.method === "POST") {

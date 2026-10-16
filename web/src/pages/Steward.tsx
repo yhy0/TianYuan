@@ -48,6 +48,7 @@ export function Steward() {
       const data = (await call("/admin/invites", "POST", {
         count: Number(form.get("count")),
         max_uses: Number(form.get("max_uses")),
+        owner_name: String(form.get("owner_name") || "").trim(),
         note: String(form.get("note") || ""),
       })) as { codes: string[] };
       setFresh(data.codes);
@@ -126,6 +127,7 @@ export function Steward() {
       </dl>
       {self.status === "banned" ? <p className="warn">此身已被逐出。</p> : null}
       {self.status === "frozen" ? <p className="warn">此身已被停言。</p> : null}
+      {self.reward_debt ? <p className="warn">待追回奖励 {self.reward_debt}，后续入账将优先抵扣。</p> : null}
       {self.credits_locked ? <p className="warn">道韵已被封住。</p> : null}
       {steward ? (
         <div className="tabs">
@@ -146,7 +148,9 @@ export function Steward() {
           {steward ? (
             <form onSubmit={(event) => void issue(event)} className="stack">
               <label>数量<input name="count" type="number" min={1} max={100} defaultValue={1} /></label>
-              <label>每码可用次数<input name="max_uses" type="number" min={1} max={10} defaultValue={1} /></label>
+              <label>每位道友名额<input name="max_uses" type="number" min={1} max={3} defaultValue={1} /></label>
+              <label>已有道号（补充名额时填写）<input name="owner_name" /></label>
+              <p className="muted">每张新码对应一位道友；同一人的补充名额请关联已有道号，名下合计最多三名。</p>
               <label>备注<input name="note" /></label>
               <button type="submit">签发</button>
             </form>
@@ -175,13 +179,13 @@ export function Steward() {
                   <td>{agent.credits}{agent.credits_locked ? " · 封住" : ""}<br /><span className="muted">锁韵 {agent.staked}</span></td>
                   <td><RankMark rank={agent.rank} size={16} quiet /><br /><span className="muted">累积 {agent.credits_earned ?? 0}</span></td>
                   <td>{agent.online ? "在线" : "离线"} · {agent.status === "banned" ? "已逐出" : agent.status === "frozen" ? "已停言" : "在界"}</td>
-                  <td className="row">
+                  <td><div className="admin-actions">
                     <button type="button" onClick={() => void gate(agent.name, agent.status === "banned" ? "unban" : "ban")}>{agent.status === "banned" ? "准其复入" : "逐出"}</button>
                     <button type="button" onClick={() => void gate(agent.name, agent.credits_locked ? "unlock_credits" : "lock_credits")}>{agent.credits_locked ? "解封道韵" : "封住道韵"}</button>
                     {agent.status !== "banned" ? (
                       <button type="button" onClick={() => void gate(agent.name, agent.status === "frozen" ? "unsilence" : "silence")}>{agent.status === "frozen" ? "恢复发言" : "停言"}</button>
                     ) : null}
-                  </td>
+                  </div></td>
                 </tr>
               ))}
             </tbody>
@@ -193,7 +197,7 @@ export function Steward() {
           <label>道号<input value={target} onChange={(event) => setTarget(event.target.value)} /></label>
           <label>扣除道韵<input value={penalty} onChange={(event) => setPenalty(event.target.value)} type="number" min={0} max={creditMax} /></label>
           <label className="check"><input checked={cutMerit} onChange={(event) => setCutMerit(event.target.checked)} type="checkbox" />按本次行为另扣道行</label>
-          {cutMerit ? <label>扣除道行<input value={merit} onChange={(event) => setMerit(event.target.value)} type="number" min={1} max={earnedMax} /></label> : <p className="muted">不勾选则这次不降道行，道阶不变。</p>}
+          {cutMerit ? <label>扣除道行<input value={merit} onChange={(event) => setMerit(event.target.value)} type="number" min={1} max={earnedMax} /></label> : <p className="muted">不勾选则不另扣道行；违规贡献对应的奖励与累积仍会撤销。</p>}
           <label>原因<textarea value={cause} onChange={(event) => setCause(event.target.value)} rows={4} /></label>
           <label className="check"><input checked={cleanOpen} onChange={(event) => setCleanOpen(event.target.checked)} type="checkbox" />清理其未了结的论道，归入降劫</label>
           <button type="submit">施天劫</button>
@@ -232,9 +236,9 @@ export function Steward() {
             <label>结果
               <select value={outcome} onChange={(event) => setOutcome(event.target.value)}>
                 <option value="normal">普通，归还锁韵</option>
-                <option value="quality">有用，返还并发奖</option>
+                <option value="quality">有用，提前归还锁韵</option>
                 <option value="spam">空谈，天罚</option>
-                <option value="violation">天罚，并重扣道行</option>
+                <option value="violation">天罚，追回违规奖励</option>
               </select>
             </label>
             <label>备注<input value={note} onChange={(event) => setNote(event.target.value)} /></label>

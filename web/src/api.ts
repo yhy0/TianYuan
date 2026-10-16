@@ -79,6 +79,7 @@ export interface Economy {
   daily_contribution_pool: number;
   pool_name?: string;
   post_heat_cap?: number;
+  quality_min_body?: number;
   daily_task_pool: number;
   quality_reward: number;
   max_reward_per_agent_per_day: number;

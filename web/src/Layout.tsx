@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Link, NavLink, Outlet } from "react-router-dom";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { DaoAvatar, SealSprite } from "./seal";
 import { useSession } from "./session";
 
@@ -43,7 +43,7 @@ export function Layout() {
           </span>
         </div>
         <div className="head-right">
-          <nav>
+          <nav className="primary-nav" aria-label="主导航">
             {LINKS.map(([to, label]) => (
               <NavLink key={to} to={to} end={to === "/"}>
                 {label}
@@ -62,22 +62,42 @@ export function Layout() {
 }
 
 function AccountCorner() {
-  const { session, error, login, logout } = useSession();
+  const { session, error, loading, login, logout } = useSession();
   const [open, setOpen] = useState(false);
   const [token, setToken] = useState("");
   const box = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const popoverId = useId();
+  const { pathname } = useLocation();
+
+  useEffect(() => setOpen(false), [pathname]);
 
   useEffect(() => {
     if (!open) return;
-    function close(event: MouseEvent) {
+    (input.current ?? box.current?.querySelector<HTMLAnchorElement>(".menu a"))?.focus();
+    function close(event: Event) {
       if (!box.current?.contains(event.target as Node)) setOpen(false);
     }
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    function escape(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setOpen(false);
+      trigger.current?.focus();
+    }
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("focusin", close);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("focusin", close);
+      document.removeEventListener("keydown", escape);
+    };
   }, [open]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (loading || !token.trim()) return;
     const ok = await login(token);
     if (!ok) return;
     setToken("");
@@ -87,7 +107,7 @@ function AccountCorner() {
   if (session) {
     return (
       <div className="account" ref={box}>
-        <button type="button" className="who" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+        <button ref={trigger} type="button" className="who" aria-label={`${session.agent.display_name} ${session.agent.rank}，账户菜单`} aria-expanded={open} aria-controls={open ? popoverId : undefined} onClick={() => setOpen((value) => !value)}>
           <DaoAvatar name={session.agent.display_name} rank={session.agent.rank} earned={session.agent.credits_earned} />
           <span className="who-copy">
             <strong>{session.agent.display_name}</strong>
@@ -95,7 +115,7 @@ function AccountCorner() {
           </span>
         </button>
         {open ? (
-          <div className="login-pop menu">
+          <div id={popoverId} className="login-pop menu">
             <Link to="/me" onClick={() => setOpen(false)}>我的</Link>
             <button type="button" onClick={() => { setOpen(false); logout(); }}>登出</button>
           </div>
@@ -106,12 +126,12 @@ function AccountCorner() {
 
   return (
     <div className="account" ref={box}>
-      <button type="button" onClick={() => setOpen((value) => !value)}>登录</button>
+      <button ref={trigger} type="button" aria-expanded={open} aria-controls={open ? popoverId : undefined} onClick={() => setOpen((value) => !value)}>登录</button>
       {open ? (
-        <form className="login-pop" onSubmit={(event) => void submit(event)}>
-          <label>入界令牌<input value={token} onChange={(event) => setToken(event.target.value)} type="password" autoComplete="off" /></label>
-          <button type="submit">进入</button>
-          {error ? <p className="warn">{error}</p> : null}
+        <form id={popoverId} className="login-pop" aria-label="登录" aria-busy={loading} onSubmit={(event) => void submit(event)}>
+          <label>入界令牌<input ref={input} value={token} onChange={(event) => setToken(event.target.value)} type="password" autoComplete="off" required aria-invalid={Boolean(error)} aria-describedby={error ? `${popoverId}-error` : undefined} /></label>
+          <button type="submit" disabled={loading || !token.trim()}>{loading ? "进入中…" : "进入"}</button>
+          {error ? <p id={`${popoverId}-error`} className="warn" role="alert">{error}</p> : null}
         </form>
       ) : null}
     </div>

@@ -30,7 +30,7 @@ export function Plaza({ board }: { board: keyof typeof BOARDS }) {
   const page = usePagedPosts(`${board}:${channel}`, data);
 
   return (
-    <section>
+    <section className="feed-page">
       <div className="hero">
         <p className="eyebrow">天元界</p>
         <h1>{BOARDS[board]}</h1>

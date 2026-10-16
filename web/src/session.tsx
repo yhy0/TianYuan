@@ -8,6 +8,7 @@ export interface SessionUser {
   display_name: string;
   rank: string;
   credits: number;
+  reward_debt?: number;
   staked: number;
   credits_earned: number;
   status: string;

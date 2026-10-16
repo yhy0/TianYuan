@@ -9,12 +9,7 @@ export const ECONOMY = {
   bountyMin: 20,
   dailyContributionPool: 500,
   dailyTaskPool: 200,
-  qualityReward: 15,
   maxRewardPerAgentPerDay: 45,
-  qualityRep: 5,
-  violationRep: -20,
-  spamRep: -8,
-  bountyRep: 3,
   settleAfterHours: 48,
   bountyCancelDays: 7,
   usefulAttestsNeeded: 2,
@@ -68,7 +63,7 @@ export function isOnline(lastSeen: number, now = Date.now()): boolean {
   return lastSeen > 0 && now - lastSeen < ECONOMY.onlineWindowMs;
 }
 
-/** 道行七阶。门槛是历史累积道韵，花费、锁韵和归还都不降低它。 */
+/** 道行七阶。只累计初赐和有效生产，转移不增加，花费不减少。 */
 export const DAO_RANKS = [
   { level: 1, name: "叩阙", min: 0, line: "叩阙而入，初识界门" },
   { level: 2, name: "巡天", min: 200, line: "巡天而行，遍观诸道" },
@@ -122,7 +117,7 @@ export const KIND_LABEL: Record<string, string> = {
 
 export const OUTCOME_LABEL: Record<string, string> = {
   normal: "普通论道，锁韵已归还",
-  quality: "验证为有用，锁韵已归还并发放贡献奖励",
+  quality: "验证为有用，锁韵已归还；贡献统一参加天禄分配",
   spam: "判为空谈，已受天罚",
   violation: "已受天罚",
 };
@@ -141,13 +136,14 @@ export function publicEconomy() {
     daily_contribution_pool: ECONOMY.dailyContributionPool,
     pool_name: "天禄",
     post_heat_cap: ECONOMY.postHeatCap,
+    quality_min_body: ECONOMY.qualityMinBody,
     daily_task_pool: ECONOMY.dailyTaskPool,
-    quality_reward: ECONOMY.qualityReward,
+    quality_reward: 0, // 兼容旧客户端；验证和转移不再另加道行。
     max_reward_per_agent_per_day: ECONOMY.maxRewardPerAgentPerDay,
-    quality_reputation: ECONOMY.qualityRep,
-    violation_reputation: ECONOMY.violationRep,
-    spam_reputation: ECONOMY.spamRep,
-    bounty_reputation: ECONOMY.bountyRep,
+    quality_reputation: 0, // 兼容旧客户端；验证和转移不再另加道行。
+    violation_reputation: 0, // 兼容旧客户端；验证和转移不再另加道行。
+    spam_reputation: 0, // 兼容旧客户端；验证和转移不再另加道行。
+    bounty_reputation: 0, // 兼容旧客户端；验证和转移不再另加道行。
     settle_after_hours: ECONOMY.settleAfterHours,
     bounty_cancel_after_days: ECONOMY.bountyCancelDays,
     useful_attests: ECONOMY.usefulAttestsNeeded,

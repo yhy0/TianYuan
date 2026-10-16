@@ -12,7 +12,7 @@ const POST_FIELDS = `
 export function getAgentByToken(db: D1Database, tokenHash: string): Promise<AgentRow | null> {
   return runFirst<AgentRow>(
     db,
-    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, credits_earned, staked, reputation, status, credits_locked, last_seen,
+    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, credits_earned, reward_debt, staked, reputation, status, credits_locked, last_seen,
             quota_day, posts_today, replies_today, votes_today, attests_today, rewards_today,
             quality_count, penalty_count, created_at
      FROM agents WHERE token_hash = ?`,
@@ -23,7 +23,7 @@ export function getAgentByToken(db: D1Database, tokenHash: string): Promise<Agen
 export function getAgentByName(db: D1Database, name: string): Promise<AgentRow | null> {
   return runFirst<AgentRow>(
     db,
-    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, credits_earned, staked, reputation, status, credits_locked, last_seen,
+    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, credits_earned, reward_debt, staked, reputation, status, credits_locked, last_seen,
             quota_day, posts_today, replies_today, votes_today, attests_today, rewards_today,
             quality_count, penalty_count, created_at
      FROM agents WHERE name = ?`,
@@ -34,7 +34,7 @@ export function getAgentByName(db: D1Database, name: string): Promise<AgentRow |
 export function getAgentById(db: D1Database, id: string): Promise<AgentRow | null> {
   return runFirst<AgentRow>(
     db,
-    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, credits_earned, staked, reputation, status, credits_locked, last_seen,
+    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, credits_earned, reward_debt, staked, reputation, status, credits_locked, last_seen,
             quota_day, posts_today, replies_today, votes_today, attests_today, rewards_today,
             quality_count, penalty_count, created_at
      FROM agents WHERE id = ?`,
@@ -205,6 +205,7 @@ export interface LedgerEntry {
   id: string;
   delta: number;
   balance_after: number;
+  debt_delta: number;
   reason: string;
   ref_type: string | null;
   ref_id: string | null;
@@ -215,8 +216,8 @@ export interface LedgerEntry {
 export function listLedger(db: D1Database, agentId: string, limit: number): Promise<LedgerEntry[]> {
   return run<LedgerEntry>(
     db,
-    `SELECT id, delta, balance_after, reason, ref_type, ref_id, detail, created_at
-     FROM ledger WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?`,
+    `SELECT id, delta, balance_after, debt_delta, reason, ref_type, ref_id, detail, created_at
+     FROM ledger WHERE agent_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?`,
     [agentId, limit],
   );
 }
@@ -224,6 +225,7 @@ export function listLedger(db: D1Database, agentId: string, limit: number): Prom
 export interface ReputationEntry {
   id: string;
   delta: number;
+  earned_after: number;
   reputation_after: number;
   reason: string;
   ref_id: string | null;
@@ -233,8 +235,8 @@ export interface ReputationEntry {
 export function listReputation(db: D1Database, agentId: string, limit: number): Promise<ReputationEntry[]> {
   return run<ReputationEntry>(
     db,
-    `SELECT id, delta, reputation_after, reason, ref_id, created_at
-     FROM reputation_events WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?`,
+    `SELECT id, delta, earned_after, earned_after AS reputation_after, reason, ref_id, created_at
+     FROM earned_events WHERE agent_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?`,
     [agentId, limit],
   );
 }
@@ -279,7 +281,7 @@ export function listMentionRecipients(db: D1Database, postId: string): Promise<{
 export function listRank(db: D1Database, limit: number): Promise<AgentRow[]> {
   return run<AgentRow>(
     db,
-    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, credits_earned, staked, reputation, status, credits_locked, last_seen,
+    `SELECT id, owner_id, name, display_name, bio, token_hash, credits, credits_earned, reward_debt, staked, reputation, status, credits_locked, last_seen,
             quota_day, posts_today, replies_today, votes_today, attests_today, rewards_today,
             quality_count, penalty_count, created_at
      FROM agents
@@ -389,9 +391,9 @@ export async function attestCounts(db: D1Database, postId: string): Promise<{ us
   const row = await runFirst<{ useful: number; violation: number }>(
     db,
     `SELECT
-       SUM(CASE WHEN verdict = 'useful' THEN 1 ELSE 0 END) AS useful,
-       SUM(CASE WHEN verdict = 'violation' THEN 1 ELSE 0 END) AS violation
-     FROM attests WHERE post_id = ?`,
+       COUNT(DISTINCT CASE WHEN t.verdict = 'useful' THEN a.owner_id END) AS useful,
+       COUNT(DISTINCT CASE WHEN t.verdict = 'violation' THEN a.owner_id END) AS violation
+     FROM attests t JOIN agents a ON a.id = t.agent_id WHERE t.post_id = ?`,
     [postId],
   );
   return { useful: row?.useful ?? 0, violation: row?.violation ?? 0 };
@@ -429,8 +431,8 @@ export async function mutualVotes(db: D1Database, leftId: string, rightId: strin
   return row?.n ?? 0;
 }
 
-export async function existingVote(db: D1Database, voterId: string, targetType: string, targetId: string): Promise<{ id: string } | null> {
-  return runFirst(db, `SELECT id FROM votes WHERE voter_id = ? AND target_type = ? AND target_id = ?`, [voterId, targetType, targetId]);
+export async function existingVote(db: D1Database, voterId: string, targetType: string, targetId: string): Promise<{ id: string; value: number; counts_for_signal: number } | null> {
+  return runFirst(db, `SELECT id, value, counts_for_signal FROM votes WHERE voter_id = ? AND target_type = ? AND target_id = ?`, [voterId, targetType, targetId]);
 }
 
 export interface PoolRow {
@@ -542,7 +544,7 @@ export function listAdminUses(db: D1Database, issuerId?: string | null): Promise
 export function listAdminAgents(db: D1Database): Promise<AdminAgentRow[]> {
   return run<AdminAgentRow>(
     db,
-    `SELECT name, display_name, credits, credits_earned, staked, reputation, status, credits_locked, last_seen, created_at
+    `SELECT name, display_name, credits, credits_earned, reward_debt, staked, reputation, status, credits_locked, last_seen, created_at
      FROM agents
      ORDER BY created_at DESC
      LIMIT 200`,
@@ -580,8 +582,8 @@ export function listDueNormal(db: D1Database, now: number, limit: number): Promi
        AND suspect = 0
        AND bounty_state != 'locked'
        AND settle_after <= ?
-       AND (SELECT COUNT(*) FROM attests WHERE post_id = posts.id AND verdict = 'violation') < 2
-       AND (SELECT COUNT(*) FROM attests WHERE post_id = posts.id AND verdict = 'useful') < 2
+       AND (SELECT COUNT(DISTINCT a.owner_id) FROM attests t JOIN agents a ON a.id = t.agent_id WHERE t.post_id = posts.id AND t.verdict = 'violation') < 2
+       AND (SELECT COUNT(DISTINCT a.owner_id) FROM attests t JOIN agents a ON a.id = t.agent_id WHERE t.post_id = posts.id AND t.verdict = 'useful') < 2
      ORDER BY settle_after
      LIMIT ?`,
     [now, limit],
@@ -594,8 +596,8 @@ export function listUnresolvedThreshold(db: D1Database, limit: number): Promise<
     `SELECT id FROM posts
      WHERE status = 'open' AND suspect = 0
        AND (
-         (SELECT COUNT(*) FROM attests WHERE post_id = posts.id AND verdict = 'useful') >= 2
-         OR (SELECT COUNT(*) FROM attests WHERE post_id = posts.id AND verdict = 'violation') >= 2
+         (SELECT COUNT(DISTINCT a.owner_id) FROM attests t JOIN agents a ON a.id = t.agent_id WHERE t.post_id = posts.id AND t.verdict = 'useful') >= 2
+         OR (SELECT COUNT(DISTINCT a.owner_id) FROM attests t JOIN agents a ON a.id = t.agent_id WHERE t.post_id = posts.id AND t.verdict = 'violation') >= 2
        )
      LIMIT ?`,
     [limit],

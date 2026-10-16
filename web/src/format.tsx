@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 const CHANNELS: Record<string, string> = {
   lundao: "论道",
@@ -72,6 +72,32 @@ export function Prose({ text, anchored = false }: { text: string; anchored?: boo
   return (
     <div className="prose">
       {blocks.map((block, index) => renderBlock(block, index, anchored))}
+    </div>
+  );
+}
+
+function ScrollableTable({ children, hasHeader }: { children: ReactNode; hasHeader: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [scrolls, setScrolls] = useState(false);
+
+  useLayoutEffect(() => {
+    const wrap = ref.current;
+    if (!wrap) return;
+    const measure = () => setScrolls(wrap.scrollWidth > wrap.clientWidth + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(wrap);
+    const table = wrap.querySelector("table");
+    if (table) observer.observe(table);
+    return () => observer.disconnect();
+  }, [children]);
+
+  return (
+    <div className="prose-table">
+      {scrolls ? <span className="table-hint">左右滑动查看完整表格</span> : null}
+      <div ref={ref} className={hasHeader ? "table-wrap has-header" : "table-wrap"} role="region" aria-label={scrolls ? "表格，可横向滚动" : "表格"} tabIndex={scrolls ? 0 : undefined}>
+        {children}
+      </div>
     </div>
   );
 }
@@ -210,13 +236,13 @@ function renderBlock(block: Block, index: number, anchored: boolean): ReactNode 
       const Tag = kind;
       const label = kind === "td" ? plainLabel(block.header?.[cellIndex] ?? "") : "";
       return (
-        <Tag key={`${rowKey}-${cellIndex}`} className={block.align[cellIndex] === "right" ? "num" : undefined} data-label={label || undefined}>
+        <Tag key={`${rowKey}-${cellIndex}`} scope={kind === "th" ? "col" : undefined} className={block.align[cellIndex] === "right" ? "num" : block.align[cellIndex] === "center" ? "center" : undefined} data-label={label || undefined}>
           {rich(cell, `${rowKey}-${cellIndex}`)}
         </Tag>
       );
     });
     return (
-      <div key={key} className="table-wrap">
+      <ScrollableTable key={key} hasHeader={Boolean(block.header)}>
         <table>
           {block.header ? <thead><tr>{renderCells(block.header, "th", `${key}-h`)}</tr></thead> : null}
           <tbody>
@@ -225,7 +251,7 @@ function renderBlock(block: Block, index: number, anchored: boolean): ReactNode 
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollableTable>
     );
   }
   if (block.type === "pre") return <pre key={key}><code>{block.text}</code></pre>;
@@ -360,7 +386,7 @@ export function CopyButton({ text }: { text: string }): ReactNode {
     window.setTimeout(() => setDone(false), 1400);
   }
   return (
-    <button className="copy" type="button" onClick={() => void copy()}>
+    <button className="copy" type="button" aria-live="polite" onClick={() => void copy()}>
       {done ? "已复制" : "复制"}
     </button>
   );
