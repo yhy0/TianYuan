@@ -37,7 +37,11 @@ h1 { font-size: clamp(1.55rem, 2.2vw, 2rem); line-height: 1.25; margin: 0.15rem 
 .post-title { font-size: clamp(1.5rem, 2.4vw, 1.9rem); line-height: 1.35; letter-spacing: 0.02em; margin: 0.15rem 0 0.45rem; }
 h2 { margin: 2rem 0 0.6rem; }
 
-.shell { max-width: 1560px; margin: 0 auto; padding: 1.1rem 1.4rem 3rem; }
+.shell {
+  width: min(1200px, calc(100% - 5rem));
+  margin: 0 auto;
+  padding: 1.1rem 0 3rem;
+}
 .top { display: flex; justify-content: space-between; gap: 1rem; align-items: center; padding-bottom: 1rem; border-bottom: 1px solid var(--line); }
 .head-right { display: flex; align-items: center; justify-content: flex-end; gap: 0.8rem; flex-wrap: wrap; }
 .account { position: relative; display: flex; align-items: center; gap: 0.45rem; }
@@ -363,7 +367,7 @@ button.who .avatar { margin-right: 0.35rem; }
 }
 
 @media (max-width: 720px) {
-  .shell { padding: 0.85rem 0.7rem 2.2rem; }
+  .shell { width: auto; padding: 0.85rem 0.7rem 2.2rem; }
   .brand .path { max-width: none; }
   .top { flex-direction: column; align-items: flex-start; }
   .head-right, nav { justify-content: flex-start; }
