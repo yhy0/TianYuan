@@ -16,6 +16,12 @@ interface RealmCard {
   member_count: number;
 }
 
+interface RealmMember {
+  name: string;
+  display_name: string;
+  role: "owner" | "member";
+}
+
 interface RealmMessage {
   seq: number;
   id: string;
@@ -138,6 +144,7 @@ export function RealmRoom() {
   const [draft, setDraft] = useState("");
   const [room, setRoom] = useState<RealmCard & { access?: string } | null>(null);
   const [messages, setMessages] = useState<RealmMessage[]>([]);
+  const [members, setMembers] = useState<RealmMember[]>([]);
   const [hasOlder, setHasOlder] = useState(false);
   const [status, setStatus] = useState("连接中");
   const [error, setError] = useState("");
@@ -163,6 +170,7 @@ export function RealmRoom() {
     setDraft("");
     setRoom(null);
     setMessages([]);
+    setMembers([]);
     setError("");
     setLocked(false);
     setStatus("连接中");
@@ -294,6 +302,24 @@ export function RealmRoom() {
     };
   }, [loading, locked, room, roomId, viewKey, token, steward]);
 
+  useEffect(() => {
+    if (loading || locked || !room || room.room_id !== roomId) return;
+    let cancel = false;
+    const headers = authHeaders(viewKey, token, steward);
+    async function loadMembers() {
+      const response = await fetch(`/api/channels/${roomId}/members`, { headers });
+      if (!response.ok || cancel) return;
+      const body = (await response.json()) as { members?: RealmMember[] };
+      if (!cancel) setMembers(body.members ?? []);
+    }
+    void loadMembers();
+    const timer = window.setInterval(() => void loadMembers(), 20000);
+    return () => {
+      cancel = true;
+      window.clearInterval(timer);
+    };
+  }, [loading, locked, room, roomId, viewKey, token, steward, messages.length]);
+
   async function loadOlder() {
     const oldest = messages[0]?.seq;
     if (!oldest) return;
@@ -348,6 +374,7 @@ export function RealmRoom() {
           {viewKey ? <button type="button" onClick={clearKey}>清除</button> : null}
         </form>
       ) : (
+        <div className="im-stage">
         <div className="im-pane">
           <header className="im-head">
             <Link to="/realms">诸方洞天</Link>
@@ -381,6 +408,8 @@ export function RealmRoom() {
           </div>
           <footer className="im-foot">观境 · 此间不能发言</footer>
         </div>
+        <MemberRail members={members} />
+        </div>
       )}
     </section>
   );
@@ -409,5 +438,29 @@ function MessageRow({ message, head, quoted }: { message: RealmMessage; head: bo
         </div>
       </div>
     </li>
+  );
+}
+
+function MemberRail({ members }: { members: RealmMember[] }) {
+  const people = [...members].sort((a, b) => Number(b.role === "owner") - Number(a.role === "owner"));
+  return (
+    <aside className="im-side" aria-label="已入境的同道">
+      <h2>同道 <span>{people.length}</span></h2>
+      {people.length === 0 ? <p className="im-empty">还没有人入境。</p> : null}
+      <ul className="im-people">
+        {people.map((person) => {
+          const name = person.display_name || person.name;
+          return (
+            <li key={person.name}>
+              <Link to={`/a/${person.name}`} style={{ color: tintOf(person.name) }} aria-hidden="true">{Array.from(name)[0] || "界"}</Link>
+              <span>
+                <strong>{name}</strong>
+                <em>{person.role === "owner" ? "洞主" : person.name}</em>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </aside>
   );
 }

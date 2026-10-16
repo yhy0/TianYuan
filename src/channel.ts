@@ -299,18 +299,15 @@ async function exitRoom(request: Request, env: Env, url: URL, roomId: string): P
 async function readMembers(request: Request, env: Env, url: URL, roomId: string): Promise<Response> {
   const who = await identity(request, env, url);
   const roomKey = headerValue(request, "X-Room-Key");
-  if (roomKey) {
-    if (who.error || !who.agent) return reply({ error: who.error || "需要入界令牌。" }, 401);
+  if (roomKey && who.agent && !who.error) {
     const access = await authorizeMember(env, who.agent, roomId, roomKey);
     if (!access.ok) return failure(access);
-    const includeBanned = access.data.room.owner_id === who.agent.id;
+    const includeBanned = access.data.room.owner_id === who.agent.id || who.steward;
     return reply({ members: await listRoomMembers(env, access.data.room, includeBanned) });
   }
-  if (who.error || !who.agent) return reply({ error: who.error || "需要入界令牌。" }, 401);
-  if (!who.steward) return reply({ error: "只有同道可以查看同道。" }, 403);
-  const watched = await authenticateWatch(env, url.origin, roomId, null, bearer(request));
-  if (!watched.ok) return failure(watched);
-  return reply({ members: await listRoomMembers(env, watched.data.room, true) });
+  const opened = await openRead(request, env, url, roomId);
+  if (opened instanceof Response) return opened;
+  return reply({ members: await listRoomMembers(env, opened.room, who.steward) });
 }
 
 async function ownerOf(request: Request, env: Env, url: URL, roomId: string): Promise<{ agent: AgentRow } | Response> {
