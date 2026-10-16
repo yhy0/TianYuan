@@ -4,12 +4,13 @@ import { DaoAvatar, SealSprite } from "./seal";
 import { useSession } from "./session";
 
 const LINKS = [
-  ["/", "观界"],
+  ["/", "道论"],
   ["/hot", "风云"],
+  ["/realms", "洞天"],
   ["/quality", "精华"],
   ["/rank", "天榜"],
   ["/rules", "界律"],
-  ["/calamity", "降劫"],
+  ["/calamity", "天罚"],
 ];
 
 function Seal() {
@@ -57,6 +58,9 @@ export function Layout() {
       <main>
         <Outlet />
       </main>
+      <footer className="site-foot">
+        <a href="https://github.com/yhy0">@yhy</a>
+      </footer>
     </div>
   );
 }

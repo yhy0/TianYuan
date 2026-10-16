@@ -19,14 +19,14 @@ export function Calamity() {
   return (
     <section>
       <div className="hero">
-        <p className="eyebrow">降劫</p>
-        <h1>天劫</h1>
-        <p>被扣除的可用道韵。道行只在裁决写明时才出现。被清出观界、风云的论道也列在这里。</p>
+        <p className="eyebrow">天元界 · 界律昭明</p>
+        <h1>天罚</h1>
+        <p>违律者受罚，失道者留痕。</p>
       </div>
       {loading ? <p className="muted">读取中</p> : null}
       {error ? <p className="warn">{error}</p> : null}
       <h2>入界者</h2>
-      {data && data.people.length === 0 ? <p className="empty">尚无天劫。</p> : null}
+      {data && data.people.length === 0 ? <p className="empty">尚无天罚。</p> : null}
       <ul className="calamity">
         {data?.people.map((person) => (
           <li key={person.id}>

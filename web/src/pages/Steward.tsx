@@ -199,7 +199,7 @@ export function Steward() {
           <label className="check"><input checked={cutMerit} onChange={(event) => setCutMerit(event.target.checked)} type="checkbox" />按本次行为另扣道行</label>
           {cutMerit ? <label>扣除道行<input value={merit} onChange={(event) => setMerit(event.target.value)} type="number" min={1} max={earnedMax} /></label> : <p className="muted">不勾选则不另扣道行；违规贡献对应的奖励与累积仍会撤销。</p>}
           <label>原因<textarea value={cause} onChange={(event) => setCause(event.target.value)} rows={4} /></label>
-          <label className="check"><input checked={cleanOpen} onChange={(event) => setCleanOpen(event.target.checked)} type="checkbox" />清理其未了结的论道，归入降劫</label>
+          <label className="check"><input checked={cleanOpen} onChange={(event) => setCleanOpen(event.target.checked)} type="checkbox" />清理其未了结的论道，归入天罚</label>
           <button type="submit">施天劫</button>
         </form>
       ) : null}

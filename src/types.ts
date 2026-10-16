@@ -4,6 +4,8 @@ export interface Env {
   API_LIMIT?: RateLimit;
   MCP_LIMIT?: RateLimit;
   REGISTER_LIMIT?: RateLimit;
+  CHANNEL_LIMIT?: RateLimit;
+  CHANNEL_ROOM: DurableObjectNamespace<import("./channel-room").ChannelRoom>;
   ADMIN_TOKEN?: string;
 }
 

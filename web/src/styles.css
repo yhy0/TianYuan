@@ -66,7 +66,16 @@ h2 { margin: 2.2rem 0 0.85rem; }
 .shell {
   width: min(var(--width-page), calc(100% - clamp(2rem, 6vw, 6rem)));
   margin: 0 auto;
-  padding: 1.6rem 0 5rem;
+  padding: 1.6rem 0 2.4rem;
+}
+.site-foot {
+  display: flex;
+  justify-content: center;
+  margin-top: 3.5rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.82rem;
 }
 .top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1.25rem; align-items: center; padding-bottom: 1.4rem; border-bottom: 1px solid var(--line-strong); }
 .head-right { display: flex; align-items: center; justify-content: flex-end; gap: 0.8rem; flex-wrap: wrap; min-width: 0; max-width: 100%; }
@@ -523,6 +532,102 @@ button.who .avatar { margin-right: 0.35rem; }
   .ranks li { grid-template-columns: 24px 3.2rem 3.2rem minmax(0, 1fr); gap: 0.25rem 0.4rem; }
   .ranks .seal { width: 24px; height: 24px; }
   .profile > .seal-host > .seal { width: 64px; height: 64px; }
+}
+
+.realm-note { margin: 0; color: var(--muted); }
+.realm-status { color: var(--moss); }
+.realm-lock { display: flex; flex-wrap: wrap; gap: 0.7rem; align-items: end; margin: 1rem 0 1.5rem; }
+.realm-lock label { display: grid; gap: 0.35rem; }
+.im-page { max-width: 46rem; margin: 0 auto; }
+.im-pane {
+  display: flex;
+  flex-direction: column;
+  height: min(40rem, calc(100dvh - 16rem));
+  min-height: 22rem;
+  background: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+}
+.im-head {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+.im-head > a { flex: none; font-size: 0.82rem; }
+.im-head h1 { margin: 0; font-size: 1.15rem; line-height: 1.3; }
+.im-head p { display: flex; flex-wrap: wrap; gap: 0.35rem 0.7rem; margin: 0.1rem 0 0; color: var(--muted); font-size: 0.75rem; }
+.im-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.85rem 0.9rem 0.4rem;
+  background:
+    linear-gradient(180deg, rgba(213, 187, 132, 0.035), transparent 7rem),
+    var(--ink);
+}
+.im-earlier, .im-empty { display: block; margin: 0.2rem auto 0.8rem; color: var(--muted); font-size: 0.78rem; text-align: center; background: transparent; border: 0; }
+.im-log { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.im-time { display: flex; justify-content: center; margin: 0.85rem 0 0.55rem; }
+.im-time span { padding: 0.12rem 0.55rem; border-radius: 999px; background: rgba(255, 255, 255, 0.04); color: var(--muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+.im-row { display: flex; align-items: flex-start; gap: 0.55rem; margin-top: 0.85rem; }
+.im-row.continued { margin-top: 0.22rem; }
+.im-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  background: var(--paper-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  line-height: 1;
+  text-decoration: none;
+}
+.im-avatar.spacer { visibility: hidden; }
+.im-stack { min-width: 0; max-width: calc(100% - 2.8rem); }
+.im-name { display: flex; align-items: baseline; gap: 0.45rem; margin: 0 0 0.22rem; font-size: 0.75rem; line-height: 1.2; }
+.im-name a { color: var(--text); text-decoration: none; }
+.im-name a:hover { color: var(--gold); }
+.im-name time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.im-bubble {
+  width: fit-content;
+  max-width: min(100%, 28rem);
+  padding: 0.5rem 0.72rem 0.55rem;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 4px 14px 14px 14px;
+}
+.im-row.continued .im-bubble { border-radius: 14px; }
+.im-quote {
+  margin: 0 0 0.35rem;
+  padding-left: 0.45rem;
+  border-left: 2px solid var(--gold);
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.im-text { margin: 0; white-space: pre-wrap; line-height: 1.55; overflow-wrap: anywhere; }
+.im-mention { margin: 0.28rem 0 0; color: var(--gold); font-size: 0.75rem; }
+.im-foot {
+  padding: 0.7rem 1rem;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-align: center;
+}
+@media (max-width: 720px) {
+  .im-pane { height: calc(100dvh - 12.5rem); min-height: 20rem; border-radius: 12px; }
+  .im-bubble { max-width: min(100%, 18rem); }
 }
 
 @media (max-width: 380px) {

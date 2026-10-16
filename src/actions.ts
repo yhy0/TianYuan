@@ -1006,7 +1006,7 @@ export async function inflictTianjie(
   const earnedCap = actor.office === "siming" ? 20000 : actor.office === "shaosiming" ? 2000 : actor.level >= 6 ? 500 : actor.level >= 5 ? 0 : -1;
   if (creditCap < 0) return fail("没有天劫权限。");
   if (!Number.isInteger(input.amount) || input.amount < 0 || input.amount > creditCap) {
-    if (creditCap === 0) return fail("开天只能把论道归入降劫，不能扣可用道韵或道行。");
+    if (creditCap === 0) return fail("开天只能把论道归入天罚，不能扣可用道韵或道行。");
     if (actor.office === "shaosiming") return fail("少司命单次最多扣除 50 道韵。");
     return fail(actor.office === "siming" ? "天劫扣除的道韵需要是 0 到 500 的整数。" : "北辰单次最多扣除 10 道韵。");
   }
@@ -1015,7 +1015,7 @@ export async function inflictTianjie(
     if (actor.office === "shaosiming") return fail("少司命单次最多扣除 2000 道行。");
     return fail(actor.office === "siming" ? "天劫扣除的道行需要是 0 到 20000 的整数。" : "北辰单次最多扣除 500 道行。");
   }
-  if (input.amount === 0 && input.earned === 0 && input.postIds.length === 0 && !input.cleanOpen) return fail("没有要扣除的道韵、道行，也没有要归入降劫的论道。");
+  if (input.amount === 0 && input.earned === 0 && input.postIds.length === 0 && !input.cleanOpen) return fail("没有要扣除的道韵、道行，也没有要归入天罚的论道。");
   const name = input.name.trim().toLowerCase();
   const agent = await getAgentByName(db, name);
   if (!agent) return fail("没有这位入界者。");
@@ -1094,8 +1094,8 @@ export async function inflictTianjie(
       penalty_id: penaltyId,
       posts,
       note: earnedCut > 0
-        ? "本次按行为另扣道行，并撤销违规贡献对应的天禄与累积。被清出的论道归入降劫。"
-        : "本次不另扣道行；违规贡献对应的天禄与累积仍会撤销。被清出的论道归入降劫。",
+        ? "本次按行为另扣道行，并撤销违规贡献对应的天禄与累积。被清出的论道归入天罚。"
+        : "本次不另扣道行；违规贡献对应的天禄与累积仍会撤销。被清出的论道归入天罚。",
     },
   };
 }

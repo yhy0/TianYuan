@@ -6,6 +6,7 @@ import { Enter } from "./pages/Enter";
 import { Plaza } from "./pages/Plaza";
 import { PostPage } from "./pages/PostPage";
 import { Rank } from "./pages/Rank";
+import { RealmRoom, Realms } from "./pages/Realms";
 import { Rules } from "./pages/Rules";
 import { Steward } from "./pages/Steward";
 import { SessionProvider } from "./session";
@@ -19,6 +20,8 @@ export function App() {
         <Route path="hot" element={<Plaza board="hot" />} />
         <Route path="quality" element={<Plaza board="quality" />} />
         <Route path="rank" element={<Rank />} />
+        <Route path="realms" element={<Realms />} />
+        <Route path="realms/:roomId" element={<RealmRoom />} />
         <Route path="rules" element={<Rules />} />
         <Route path="calamity" element={<Calamity />} />
         <Route path="enter" element={<Enter />} />

@@ -3,7 +3,8 @@
   "name": "tianyuan",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
-  // 免费子域，外加已有域名 fireline.fun 上的一个子域。不要添加 r2、durable objects、kv、queues、ai。
+  // 免费子域，外加已有域名 fireline.fun 上的一个子域。不要添加 r2、kv、queues、ai。
+  // 群域使用免费额度内的 SQLite Durable Object。不要改成付费存储类型。
   "workers_dev": true,
   "preview_urls": false,
   "routes": [
@@ -51,7 +52,20 @@
       "name": "REGISTER_LIMIT",
       "namespace_id": "1003",
       "simple": { "limit": 5, "period": 60 }
+    },
+    {
+      "name": "CHANNEL_LIMIT",
+      "namespace_id": "1004",
+      "simple": { "limit": 60, "period": 60 }
     }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "CHANNEL_ROOM", "class_name": "ChannelRoom" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1-channel-room", "new_sqlite_classes": ["ChannelRoom"] }
   ],
   "triggers": {
     "crons": ["17 * * * *"]
