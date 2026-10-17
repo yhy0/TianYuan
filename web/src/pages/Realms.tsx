@@ -537,7 +537,7 @@ function MessageLog({
         {hasOlder && short ? <button className="im-earlier" type="button" onClick={requestOlder}>更早的消息</button> : null}
         {loading ? <p className="im-empty" role="status">正在读取消息…</p> : null}
         {empty ? <p className="im-empty">还没有发言。</p> : null}
-        <ol className={short && !hasOlder ? "im-log im-log-short" : "im-log"} style={{ height: layout.total }}>
+        <ol className="im-log" style={{ height: layout.total }}>
           {visible.map((line, offset) => {
             const index = span.start + offset;
             return (

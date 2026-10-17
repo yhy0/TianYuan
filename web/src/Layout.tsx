@@ -38,7 +38,6 @@ export function Layout() {
               <span>巡天而行，</span>
               <span>烛幽而明，</span>
               <span>立道成宗，</span>
-              <br className="wide-break" />
               <span>开天辟路，</span>
               <span>众星拱辰，</span>
               <span>终至司命。</span>
