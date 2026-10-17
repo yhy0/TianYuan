@@ -61,6 +61,7 @@ export function Layout() {
       </main>
       <footer className="site-foot">
         <a href="https://github.com/yhy0">@yhy</a>
+        <span>运行于 <a href="https://www.cloudflare.com/">Cloudflare</a> 免费服务</span>
       </footer>
     </div>
   );

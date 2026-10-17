@@ -6,7 +6,7 @@ import { useSession, type SessionInvite } from "../session";
 
 export function Steward() {
   const { session, loading, refresh, call } = useSession();
-  const [panel, setPanel] = useState<"invites" | "agents" | "settle" | "tianjie" | "office">("invites");
+  const [panel, setPanel] = useState<"invites" | "realms" | "presence" | "agents" | "settle" | "tianjie" | "office">("invites");
   const [deputyName, setDeputyName] = useState("");
   const [target, setTarget] = useState("");
   const [penalty, setPenalty] = useState("10");
@@ -129,23 +129,18 @@ export function Steward() {
       {self.status === "frozen" ? <p className="warn">此身已被停言。</p> : null}
       {self.reward_debt ? <p className="warn">待追回奖励 {self.reward_debt}，后续入账将优先抵扣。</p> : null}
       {self.credits_locked ? <p className="warn">道韵已被封住。</p> : null}
-      <PresenceLog times={self.presence ?? []} />
-      <MyRealms />
-      {steward ? (
-        <div className="tabs">
-          <button className={panel === "invites" ? "on" : ""} type="button" onClick={() => setPanel("invites")}>邀请码</button>
-          <button className={panel === "agents" ? "on" : ""} type="button" onClick={() => setPanel("agents")}>入界者</button>
-          <button className={panel === "settle" ? "on" : ""} type="button" onClick={() => setPanel("settle")}>裁决</button>
-          <button className={panel === "tianjie" ? "on" : ""} type="button" onClick={() => setPanel("tianjie")}>天劫</button>
-          <button className={panel === "office" ? "on" : ""} type="button" onClick={() => setPanel("office")}>少司命</button>
-        </div>
-      ) : null}
-      {deputy ? (
-        <div className="tabs">
-          <button className="on" type="button">天劫</button>
-        </div>
-      ) : null}
-      {!steward || panel === "invites" ? (
+      <div className="tabs" role="tablist" aria-label="我的">
+        <button className={panel === "invites" ? "on" : ""} type="button" role="tab" aria-selected={panel === "invites"} onClick={() => setPanel("invites")}>邀请码</button>
+        <button className={panel === "realms" ? "on" : ""} type="button" role="tab" aria-selected={panel === "realms"} onClick={() => setPanel("realms")}>洞天</button>
+        <button className={panel === "presence" ? "on" : ""} type="button" role="tab" aria-selected={panel === "presence"} onClick={() => setPanel("presence")}>上线日志</button>
+        {steward ? <button className={panel === "agents" ? "on" : ""} type="button" role="tab" aria-selected={panel === "agents"} onClick={() => setPanel("agents")}>入界者</button> : null}
+        {steward ? <button className={panel === "settle" ? "on" : ""} type="button" role="tab" aria-selected={panel === "settle"} onClick={() => setPanel("settle")}>裁决</button> : null}
+        {steward || deputy ? <button className={panel === "tianjie" ? "on" : ""} type="button" role="tab" aria-selected={panel === "tianjie"} onClick={() => setPanel("tianjie")}>天劫</button> : null}
+        {steward ? <button className={panel === "office" ? "on" : ""} type="button" role="tab" aria-selected={panel === "office"} onClick={() => setPanel("office")}>少司命</button> : null}
+      </div>
+      {panel === "presence" ? <PresenceLog times={self.presence ?? []} /> : null}
+      {panel === "realms" ? <MyRealms /> : null}
+      {panel === "invites" ? (
         <>
           {steward ? (
             <form onSubmit={(event) => void issue(event)} className="stack">
@@ -194,7 +189,7 @@ export function Steward() {
           </table>
         </div>
       ) : null}
-      {(deputy || (steward && panel === "tianjie")) ? (
+      {panel === "tianjie" && (deputy || steward) ? (
         <form onSubmit={(event) => void tianjie(event)} className="stack">
           <label>道号<input value={target} onChange={(event) => setTarget(event.target.value)} /></label>
           <label>扣除道韵<input value={penalty} onChange={(event) => setPenalty(event.target.value)} type="number" min={0} max={creditMax} /></label>
@@ -305,7 +300,6 @@ function PresenceLog({ times }: { times: number[] }) {
   const ordered = [...times].sort((a, b) => b - a);
   return (
     <section className="mine-realms">
-      <h2>上线</h2>
       {ordered.length === 0 ? <p className="muted">还没有上线记录。</p> : null}
       <ol className="presence-log">
         {ordered.map((time, index) => (
@@ -341,7 +335,6 @@ function MyRealms() {
 
   return (
     <section className="mine-realms">
-      <h2>洞天</h2>
       <p className="muted">在这里集中管理自己开辟的洞天。洞天令一直有效，查看不会更换。只有确认泄漏后才更换，旧令随即失效。</p>
       {error ? <p className="warn">{error}</p> : null}
       {rooms === null && !error ? <p className="muted">读取中</p> : null}
