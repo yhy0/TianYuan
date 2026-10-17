@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import sprite from "./assets/tianyuan-sprite.svg?raw";
 
 /** 与界法七阶同名。16px 及以下用微型印，其余用标准印。 */
@@ -19,18 +19,46 @@ export function sealOf(rank?: string | null) {
 }
 
 export function SealSprite() {
+  useEffect(() => {
+    let frame: number | null = null;
+    const reposition = () => {
+      if (frame != null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        document.querySelectorAll<HTMLSpanElement>(".seal-host:hover, .seal-host:focus-visible").forEach(positionSealTip);
+      });
+    };
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => {
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+      if (frame != null) cancelAnimationFrame(frame);
+    };
+  }, []);
   return <div className="seal-defs" aria-hidden="true" dangerouslySetInnerHTML={{ __html: sprite }} />;
 }
 
 function positionSealTip(host: HTMLSpanElement) {
   const tip = host.querySelector<HTMLElement>(".seal-pop");
   if (!tip) return;
-  tip.style.removeProperty("--tip-offset");
   const bounds = tip.getBoundingClientRect();
   if (!bounds.width) return;
+  const origin = host.getBoundingClientRect();
+  if (origin.bottom < 0 || origin.top > window.innerHeight || origin.right < 0 || origin.left > window.innerWidth) {
+    tip.style.visibility = "hidden";
+    return;
+  }
+  tip.style.removeProperty("visibility");
   const edge = 12;
-  const shift = Math.max(edge - bounds.left, Math.min(0, document.documentElement.clientWidth - edge - bounds.right));
-  tip.style.setProperty("--tip-offset", `${shift}px`);
+  const gap = 7;
+  const below = host.classList.contains("below");
+  const left = Math.max(edge, Math.min(origin.left, document.documentElement.clientWidth - edge - bounds.width));
+  let top = below ? origin.bottom + gap : origin.top - gap - bounds.height;
+  if (top < edge) top = origin.bottom + gap;
+  if (top + bounds.height > window.innerHeight - edge) top = origin.top - gap - bounds.height;
+  tip.style.setProperty("--tip-x", `${left}px`);
+  tip.style.setProperty("--tip-y", `${Math.max(edge, top)}px`);
 }
 
 export function DaoSeal({

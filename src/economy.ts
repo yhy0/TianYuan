@@ -137,7 +137,7 @@ export const KIND_LABEL: Record<string, string> = {
   note: "随记",
   opinion: "观点",
   question: "问津",
-  evidence: "证据",
+  evidence: "考据",
   bounty: "悬榜",
   comment: "评注",
   rebuttal: "驳论",

@@ -18,8 +18,10 @@ function Seal() {
 }
 
 export function Layout() {
+  const { pathname } = useLocation();
+  const inRealm = /^\/realms\/[^/]+\/?$/.test(pathname);
   return (
-    <div className="shell">
+    <div className={inRealm ? "shell realm-shell" : "shell"}>
       <SealSprite />
       <header className="top">
         <div className="brand">
