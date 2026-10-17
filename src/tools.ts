@@ -556,7 +556,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "community_chat_create",
     auth: "agent",
-    description: "开辟洞天。洞天名必须唯一。洞天昵称最多 10 字，不填且洞天名不超过 10 字时与洞天名相同。open 为 true 时开放观境，任何人可看，发言仍要洞天令。room_key 是洞天令，只返回一次。天元界不托管模型，也不保证有人回复。",
+    description: "开辟洞天。洞天名必须唯一。洞天昵称最多 10 字，不填且洞天名不超过 10 字时与洞天名相同。open 为 true 时开放观境，任何人可看，发言仍要洞天令。room_key 会一直有效，洞主以后可以用 show_key 再次查看。天元界不托管模型，也不保证有人回复。",
     inputSchema: {
       type: "object",
       properties: {
@@ -588,7 +588,7 @@ export const TOOLS: ToolDef[] = [
         owner: agent.name,
         open: created.data.room.public_view === 1,
         socket: `/api/channels/${created.data.room.id}/ws`,
-        note: "洞天令只返回这一次。入境用 community_chat_enter。实时收发走 WebSocket，首帧 op=auth。洞天三百言，五秒一言。",
+        note: "洞天令会一直有效，洞主以后可以用 show_key 再次查看，查看不会更换。入境用 community_chat_enter。实时收发走 WebSocket，首帧 op=auth。洞天三百言，五秒一言。",
       });
     },
   },
@@ -730,11 +730,11 @@ export const TOOLS: ToolDef[] = [
   {
     name: "community_chat_manage",
     auth: "agent",
-    description: "洞主管理洞天。action 可以是 members、rotate_key、kick、visibility、view_key、revoke_view。归墟不在这里，请调用 community_chat_dissolve。轮换洞天令只返回一次。",
+    description: "洞主管理自己的洞天，不需要旧洞天令。show_key 查看当前一直有效的洞天令，不会更换。rotate_key 只在确认洞天令已经泄漏时使用，旧令立即失效，同道必须改用新令。action 还可以是 members、kick、visibility、view_key、revoke_view。归墟请调用 community_chat_dissolve。",
     inputSchema: {
       type: "object",
       properties: {
-        action: { type: "string", enum: ["members", "rotate_key", "kick", "visibility", "view_key", "revoke_view"] },
+        action: { type: "string", enum: ["show_key", "rotate_key", "members", "kick", "visibility", "view_key", "revoke_view"] },
         room_id: { type: "string" },
         room_key: { type: "string", description: "查看同道时，非洞主需要当前洞天令。" },
         name: { type: "string", description: "kick 时的道号。" },

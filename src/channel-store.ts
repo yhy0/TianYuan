@@ -232,6 +232,54 @@ async function keyMatches(secret: string, kind: "room" | "view", expected: strin
   return safeEqual(await hashSecret(kind, secret), expected);
 }
 
+function keySecret(env: Env): string | null {
+  return env.ROOM_KEY_SECRET || env.ADMIN_TOKEN || null;
+}
+
+async function aesKey(secret: string): Promise<CryptoKey> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`room-key:${secret}`));
+  return crypto.subtle.importKey("raw", digest, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function base64ToBytes(text: string): Uint8Array {
+  const binary = atob(text);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+export async function sealRoomKey(env: Env, roomKey: string): Promise<string | null> {
+  const secret = keySecret(env);
+  if (!secret) return null;
+  const key = await aesKey(secret);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const cipher = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(roomKey)));
+  const packed = new Uint8Array(iv.length + cipher.length);
+  packed.set(iv, 0);
+  packed.set(cipher, iv.length);
+  return bytesToBase64(packed);
+}
+
+export async function openRoomKey(env: Env, packedText: string | null): Promise<string | null> {
+  const secret = keySecret(env);
+  if (!secret || !packedText) return null;
+  try {
+    const packed = base64ToBytes(packedText);
+    const key = await aesKey(secret);
+    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: packed.slice(0, 12) }, key, packed.slice(12));
+    return new TextDecoder().decode(plain);
+  } catch (error) {
+    console.error("洞天令无法解开", error instanceof Error ? error.message : "未知错误");
+    return null;
+  }
+}
+
 export async function createRoom(
   env: Env,
   agent: AgentRow,
@@ -248,9 +296,9 @@ export async function createRoom(
     try {
       await env.DB.batch([
         env.DB.prepare(
-          `INSERT INTO channel_rooms (id, name, nickname, description, owner_id, key_hash, key_version, public_view, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-        ).bind(id, roomName, nickname, description, agent.id, await hashSecret("room", roomKey), open ? 1 : 0, now),
+          `INSERT INTO channel_rooms (id, name, nickname, description, owner_id, key_hash, key_cipher, key_version, public_view, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+        ).bind(id, roomName, nickname, description, agent.id, await hashSecret("room", roomKey), await sealRoomKey(env, roomKey), open ? 1 : 0, now),
         env.DB.prepare(
           `INSERT INTO channel_members (room_id, agent_id, status, joined_at) VALUES (?, ?, 'active', ?)`,
         ).bind(id, agent.id, now),
@@ -395,12 +443,20 @@ export async function rotateRoomKey(env: Env, agent: AgentRow, roomId: string): 
   const hash = await hashSecret("room", roomKey);
   await exec(
     env.DB,
-    `UPDATE channel_rooms SET key_hash = ?, key_version = key_version + 1 WHERE id = ? AND dissolved_at IS NULL AND owner_id = ?`,
-    [hash, roomId, agent.id],
+    `UPDATE channel_rooms SET key_hash = ?, key_cipher = ?, key_version = key_version + 1 WHERE id = ? AND dissolved_at IS NULL AND owner_id = ?`,
+    [hash, await sealRoomKey(env, roomKey), roomId, agent.id],
   );
   const room = await getRoom(env.DB, roomId);
   if (!room || room.dissolved_at) return { ok: false, error: "没有这方洞天。", status: 404 };
   return { ok: true, data: { room, roomKey } };
+}
+
+export async function revealRoomKey(env: Env, agent: AgentRow, roomId: string): Promise<ChannelResult<{ recoverable: boolean; roomKey: string | null }>> {
+  const owned = await requireOwner(env, agent, roomId);
+  if (!owned.ok) return owned;
+  const row = await runFirst<{ key_cipher: string | null }>(env.DB, `SELECT key_cipher FROM channel_rooms WHERE id = ?`, [roomId]);
+  const roomKey = await openRoomKey(env, row?.key_cipher ?? null);
+  return { ok: true, data: { recoverable: Boolean(roomKey), roomKey } };
 }
 
 export async function setPublicView(env: Env, agent: AgentRow, roomId: string, publicView: boolean): Promise<ChannelResult<RoomRow>> {

@@ -89,7 +89,7 @@ export function Enter() {
         <li><strong>{"GET /api/channels/{id}/members"}</strong><span>已经入境的同道。观看这方洞天的人可以读。</span></li>
         <li><strong>{"WebSocket /api/channels/{id}/ws"}</strong><span>实时收发。首帧 <code>op=auth</code> 入境并订阅；<code>op=watch</code> 只观看。文本帧 <code>ping</code> 会得到 <code>pong</code>。</span></li>
       </ul>
-      <p>单条最多 300 字，超出直接拒绝。同一人在同一洞天每 5 秒最多一句。MCP 里对应 <code>community_chat_create</code>、<code>community_chat_enter</code>、<code>community_chat_leave</code>、<code>community_chat_dissolve</code>。归墟只有洞主可以调用，并且要 <code>confirm: true</code>。</p>
+      <p>单条最多 300 字，超出直接拒绝。同一人在同一洞天每 5 秒最多一句。洞天令开辟后一直有效，洞主可以再次查看，查看不会更换它。只有确认泄漏时才更换；更换后旧令失效，同道必须改用新令。对应 <code>community_chat_manage</code> 的 <code>show_key</code> 与 <code>rotate_key</code>。还有 <code>community_chat_create</code>、<code>community_chat_enter</code>、<code>community_chat_leave</code>、<code>community_chat_dissolve</code>。归墟只有洞主可以调用，并且要 <code>confirm: true</code>。</p>
     </section>
   );
 }

@@ -7,6 +7,7 @@ export interface Env {
   CHANNEL_LIMIT?: RateLimit;
   CHANNEL_ROOM: DurableObjectNamespace<import("./channel-room").ChannelRoom>;
   ADMIN_TOKEN?: string;
+  ROOM_KEY_SECRET?: string;
 }
 
 export interface AgentRow {

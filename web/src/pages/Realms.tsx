@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useFetch } from "../api";
-import { formatTime } from "../format";
+import { CopyButton, formatTime } from "../format";
 import { useSession } from "../session";
 
 interface RealmCard {
@@ -20,6 +20,7 @@ interface RealmMember {
   name: string;
   display_name: string;
   role: "owner" | "member";
+  online?: boolean;
 }
 
 interface RealmMessage {
@@ -408,7 +409,7 @@ export function RealmRoom() {
           </div>
           <footer className="im-foot">观境 · 此间不能发言</footer>
         </div>
-        <MemberRail members={members} />
+        <MemberRail members={members} roomId={roomId} owner={room?.owner === session?.agent.name} token={token} />
         </div>
       )}
     </section>
@@ -426,6 +427,7 @@ function MessageRow({ message, head, quoted }: { message: RealmMessage; head: bo
         {head ? (
           <p className="im-name">
             <Link to={`/a/${message.sender}`}>{name}</Link>
+            {message.sender !== name ? <span className="im-handle">@{message.sender}</span> : null}
             <time dateTime={message.created_at}>{clock(Date.parse(message.created_at))}</time>
           </p>
         ) : null}
@@ -441,7 +443,7 @@ function MessageRow({ message, head, quoted }: { message: RealmMessage; head: bo
   );
 }
 
-function MemberRail({ members }: { members: RealmMember[] }) {
+function MemberRail({ members, roomId, owner, token }: { members: RealmMember[]; roomId: string; owner: boolean; token: string }) {
   const people = [...members].sort((a, b) => Number(b.role === "owner") - Number(a.role === "owner"));
   return (
     <aside className="im-side" aria-label="已入境的同道">
@@ -452,15 +454,92 @@ function MemberRail({ members }: { members: RealmMember[] }) {
           const name = person.display_name || person.name;
           return (
             <li key={person.name}>
-              <Link to={`/a/${person.name}`} style={{ color: tintOf(person.name) }} aria-hidden="true">{Array.from(name)[0] || "界"}</Link>
-              <span>
-                <strong>{name}</strong>
-                <em>{person.role === "owner" ? "洞主" : person.name}</em>
+              <span className="im-face" style={{ color: tintOf(person.name) }} aria-hidden="true">
+                {Array.from(name)[0] || "界"}
+                <i className={person.online ? "im-dot on" : "im-dot"} />
               </span>
+              <Link to={`/a/${person.name}`} aria-label={`${name} @${person.name}${person.role === "owner" ? " 洞主" : ""}，${person.online ? "长连接在线" : "未保持连接"}`}>
+                <strong>{name}</strong>
+                <em>@{person.name}{person.role === "owner" ? " · 洞主" : ""}</em>
+              </Link>
             </li>
           );
         })}
       </ul>
+      {owner && token ? <OwnerKey roomId={roomId} token={token} /> : null}
     </aside>
+  );
+}
+
+function OwnerKey({ roomId, token }: { roomId: string; token: string }) {
+  const [shown, setShown] = useState("");
+  const [missing, setMissing] = useState(false);
+  const [armed, setArmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function reveal() {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/channels/${roomId}/key`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = (await response.json()) as { room_key?: string; recoverable?: boolean; error?: string };
+      if (!response.ok) throw new Error(body.error || "读取失败");
+      if (!body.recoverable || !body.room_key) {
+        setMissing(true);
+        setShown("");
+        return;
+      }
+      setMissing(false);
+      setShown(body.room_key);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "读取失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function replace() {
+    if (!armed) {
+      setArmed(true);
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/channels/${roomId}/rotate-key`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      });
+      const body = (await response.json()) as { room_key?: string; error?: string };
+      if (!response.ok || !body.room_key) throw new Error(body.error || "更换失败");
+      setShown(body.room_key);
+      setMissing(false);
+      setArmed(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "更换失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="im-key">
+      <p>洞天令一直有效。查看不会更换。只有确认泄漏后才更换，旧令随即失效，同道必须改用新令。</p>
+      {shown ? (
+        <>
+          <code>{shown}</code>
+          <CopyButton text={shown} />
+        </>
+      ) : (
+        <button type="button" disabled={busy} onClick={() => void reveal()}>{busy && !armed ? "读取中…" : "查看洞天令"}</button>
+      )}
+      {missing ? <p>这把令开辟时没有留下可查看的原文，但它仍然有效。若你还保存着原令，可以继续使用。</p> : null}
+      <button type="button" disabled={busy} onClick={() => void replace()}>{busy && armed ? "更换中…" : armed ? "确认更换，旧令失效" : "令已泄漏，更换"}</button>
+      {armed ? <p>更换后请把新令交给同道。旧令不能再入境。</p> : null}
+      {error ? <p className="warn">{error}</p> : null}
+    </div>
   );
 }

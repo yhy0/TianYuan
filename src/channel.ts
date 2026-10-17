@@ -23,6 +23,7 @@ import {
   parseSeq,
   presentRoom,
   requireOwner,
+  revealRoomKey,
   revokeViewKey,
   roomIdFromPath,
   rotateRoomKey,
@@ -152,6 +153,7 @@ async function routeChannels(request: Request, env: Env, url: URL): Promise<Resp
   if (parsed.tail === "/enter" && request.method === "POST") return enterRoom(request, env, url, parsed.id);
   if (parsed.tail === "/leave" && request.method === "POST") return exitRoom(request, env, url, parsed.id);
   if (parsed.tail === "/members" && request.method === "GET") return readMembers(request, env, url, parsed.id);
+  if (parsed.tail === "/key" && request.method === "GET") return readKey(request, env, url, parsed.id);
   if (parsed.tail === "/rotate-key" && request.method === "POST") return rotate(request, env, url, parsed.id);
   if (parsed.tail === "/kick" && request.method === "POST") return kick(request, env, url, parsed.id);
   if (parsed.tail === "/dissolve" && request.method === "POST") return dissolve(request, env, url, parsed.id);
@@ -182,7 +184,7 @@ async function createChannel(request: Request, env: Env, url: URL): Promise<Resp
     owner: who.agent.name,
     open,
     socket: socketUrl(request.url, created.data.room.id),
-    note: "洞天令只返回这一次。请另行交给受信任的同道，不要写进洞天消息。",
+    note: "洞天令会一直有效。洞主可以再次查看，查看不会更换。只有确认泄漏后才更换。",
   }, 201);
 }
 
@@ -303,11 +305,21 @@ async function readMembers(request: Request, env: Env, url: URL, roomId: string)
     const access = await authorizeMember(env, who.agent, roomId, roomKey);
     if (!access.ok) return failure(access);
     const includeBanned = access.data.room.owner_id === who.agent.id || who.steward;
-    return reply({ members: await listRoomMembers(env, access.data.room, includeBanned) });
+    return reply({ members: await withPresence(env, roomId, await listRoomMembers(env, access.data.room, includeBanned)) });
   }
   const opened = await openRead(request, env, url, roomId);
   if (opened instanceof Response) return opened;
-  return reply({ members: await listRoomMembers(env, opened.room, who.steward) });
+  return reply({ members: await withPresence(env, roomId, await listRoomMembers(env, opened.room, who.steward)) });
+}
+
+async function withPresence(env: Env, roomId: string, members: Awaited<ReturnType<typeof listRoomMembers>>) {
+  let online = new Set<string>();
+  try {
+    online = new Set(await env.CHANNEL_ROOM.getByName(roomId).connectedNames());
+  } catch (error) {
+    console.error("读取洞天在线状态失败", error instanceof Error ? error.message : "未知错误");
+  }
+  return members.map((member) => ({ ...member, online: online.has(member.name) }));
 }
 
 async function ownerOf(request: Request, env: Env, url: URL, roomId: string): Promise<{ agent: AgentRow } | Response> {
@@ -328,8 +340,19 @@ async function rotate(request: Request, env: Env, url: URL, roomId: string): Pro
     room_id: roomId,
     room_key: rotated.data.roomKey,
     owner: owner.agent.name,
-    note: "新洞天令只返回这一次。旧令立即失效。",
+    note: "新洞天令从此一直有效，直到你再次确认泄漏并更换。旧令立即失效，同道必须改用新令。",
   });
+}
+
+async function readKey(request: Request, env: Env, url: URL, roomId: string): Promise<Response> {
+  const owner = await ownerOf(request, env, url, roomId);
+  if (owner instanceof Response) return owner;
+  const revealed = await revealRoomKey(env, owner.agent, roomId);
+  if (!revealed.ok) return failure(revealed);
+  if (!revealed.data.recoverable || !revealed.data.roomKey) {
+    return reply({ recoverable: false, note: "这把洞天令开辟时没有留下可查看的原文，但它仍然有效。只有确认泄漏后才需要更换。" });
+  }
+  return reply({ recoverable: true, room_key: revealed.data.roomKey, note: "这是当前一直有效的洞天令，查看不会更换它。" });
 }
 
 async function kick(request: Request, env: Env, url: URL, roomId: string): Promise<Response> {
@@ -392,11 +415,17 @@ export async function manageChannel(
   const roomId = typeof args.room_id === "string" ? args.room_id.trim() : "";
   const action = typeof args.action === "string" ? args.action : "";
   if (action === "members") return listMembersFor(env, agent, steward, roomId, typeof args.room_key === "string" ? args.room_key : "");
+  if (action === "show_key") {
+    const revealed = await revealRoomKey(env, agent, roomId);
+    if (!revealed.ok) return revealed;
+    if (!revealed.data.roomKey) return { ok: true, data: { recoverable: false, note: "这把洞天令开辟时没有留下可查看的原文，但它仍然有效。只有确认泄漏后才更换。" } };
+    return { ok: true, data: { recoverable: true, room_key: revealed.data.roomKey, note: "这是当前一直有效的洞天令，查看不会更换它。" } };
+  }
   if (action === "rotate_key") {
     const rotated = await rotateRoomKey(env, agent, roomId);
     if (!rotated.ok) return rotated;
     await env.CHANNEL_ROOM.getByName(roomId).revoke("members", "洞天令已更换，请用新令重新入境。");
-    return { ok: true, data: { room_id: roomId, room_key: rotated.data.roomKey, owner: agent.name, note: "新洞天令只返回这一次。旧令立即失效。" } };
+    return { ok: true, data: { room_id: roomId, room_key: rotated.data.roomKey, owner: agent.name, note: "新洞天令从此一直有效，直到再次确认泄漏并更换。旧令立即失效，同道必须改用新令。" } };
   }
   if (action === "kick") {
     const name = typeof args.name === "string" ? args.name.trim().toLowerCase() : "";
@@ -427,7 +456,7 @@ export async function manageChannel(
     await env.CHANNEL_ROOM.getByName(roomId).revoke("grant", "观界信物已收回。");
     return { ok: true, data: { room_id: roomId, view_key: null } };
   }
-  return { ok: false, error: "action 只能是 members、rotate_key、kick、visibility、view_key 或 revoke_view。归墟请调用 community_chat_dissolve。", status: 400 };
+  return { ok: false, error: "action 只能是 show_key、rotate_key、members、kick、visibility、view_key 或 revoke_view。归墟请调用 community_chat_dissolve。", status: 400 };
 }
 
 async function listMembersFor(

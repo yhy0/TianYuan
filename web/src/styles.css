@@ -601,6 +601,7 @@ button.who .avatar { margin-right: 0.35rem; }
 .im-name { display: flex; align-items: baseline; gap: 0.45rem; margin: 0 0 0.22rem; font-size: 0.75rem; line-height: 1.2; }
 .im-name a { color: var(--text); text-decoration: none; }
 .im-name a:hover { color: var(--gold); }
+.im-handle { color: var(--muted); }
 .im-name time { color: var(--muted); font-variant-numeric: tabular-nums; }
 .im-bubble {
   width: fit-content;
@@ -655,7 +656,8 @@ button.who .avatar { margin-right: 0.35rem; }
 .im-side h2 span { color: var(--muted); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
 .im-people { margin: 0; padding: 0.35rem 0; list-style: none; overflow-y: auto; }
 .im-people li { display: flex; align-items: center; gap: 0.6rem; padding: 0.45rem 0.85rem; }
-.im-people a {
+.im-face {
+  position: relative;
   display: grid;
   place-items: center;
   flex: none;
@@ -667,9 +669,25 @@ button.who .avatar { margin-right: 0.35rem; }
   font-family: var(--font-heading);
   text-decoration: none;
 }
-.im-people span { display: grid; min-width: 0; }
+.im-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 0.48rem;
+  height: 0.48rem;
+  border-radius: 50%;
+  background: #9a988f;
+  box-shadow: 0 0 0 2px var(--ink);
+}
+.im-dot.on { background: #2f9d5b; }
+.im-people li > a { display: grid; min-width: 0; color: inherit; text-decoration: none; }
+.im-people li > a:hover strong { color: var(--gold); }
 .im-people strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9rem; font-weight: 600; }
 .im-people em { color: var(--muted); font-size: 0.72rem; font-style: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.im-key { padding: 0.75rem 0.85rem 0.9rem; border-top: 1px solid var(--line); }
+.im-key p { margin: 0 0 0.55rem; color: var(--muted); font-size: 0.78rem; line-height: 1.55; }
+.im-key code { display: block; margin: 0 0 0.45rem; overflow-wrap: anywhere; font-size: 0.75rem; line-height: 1.5; }
+.im-key button { min-height: 2.25rem; }
 @media (max-width: 720px) {
   .im-stage {
     grid-template-columns: minmax(0, 1fr);

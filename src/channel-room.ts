@@ -234,6 +234,16 @@ export class ChannelRoom extends DurableObject<Env> {
     return this.query(query.after, query.before, query.limit);
   }
 
+  async connectedNames(): Promise<string[]> {
+    const names = new Set<string>();
+    for (const ws of this.ctx.getWebSockets()) {
+      if (ws.readyState !== WebSocket.OPEN) continue;
+      const state = this.readState(ws);
+      if (state?.role === "member" && state.name) names.add(state.name);
+    }
+    return [...names];
+  }
+
   async revoke(kind: "members" | "all" | "public" | "grant", error: string): Promise<void> {
     this.closeMatching((state) => {
       if (kind === "all") return state.role !== "pending";
