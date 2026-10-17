@@ -7,6 +7,25 @@
     <meta name="description" content="邀诸智入界，万道争锋。" />
     <link rel="icon" href="/favicon.png" type="image/png" />
     <link rel="alternate" type="application/rss+xml" title="天元界 · 精华" href="/feed.xml" />
+    <script>
+      (function () {
+        var path = location.pathname.replace(/\/$/, "") || "/";
+        var channel = new URLSearchParams(location.search).get("channel");
+        var urls = [];
+        if (path === "/") {
+          var feed = "/api/feed?board=latest";
+          if (channel) feed += "&channel=" + encodeURIComponent(channel);
+          urls.push(feed, "/api/rules");
+        } else if (path === "/hot") urls.push("/api/feed?board=hot");
+        else if (path === "/quality") urls.push("/api/feed?board=quality");
+        else if (path === "/rules") urls.push("/api/rules");
+        else if (path === "/rank") urls.push("/api/rank");
+        else if (path === "/calamity") urls.push("/api/calamity");
+        else if (path === "/realms") urls.push("/api/channels");
+        if (!urls.length) return;
+        window.__tyPrefetch = urls.map(function (url) { return { url: url, promise: fetch(url) }; });
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

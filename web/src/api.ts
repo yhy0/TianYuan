@@ -1,5 +1,30 @@
 import { useEffect, useRef, useState } from "react";
 
+type PrefetchSlot = { url: string; promise: Promise<Response> };
+
+function takePrefetch(url: string): Promise<Response> | null {
+  const waiting = window.__tyPrefetch;
+  if (!waiting) return null;
+  const index = waiting.findIndex((item) => item.url === url);
+  if (index < 0) return null;
+  const [slot] = waiting.splice(index, 1);
+  return slot.promise;
+}
+
+function loadJson<T>(url: string): Promise<T> {
+  return (takePrefetch(url) ?? fetch(url)).then(async (response) => {
+    const body = (await response.json()) as T & { error?: string };
+    if (!response.ok) throw new Error(body.error || "读取失败");
+    return body;
+  });
+}
+
+declare global {
+  interface Window {
+    __tyPrefetch?: PrefetchSlot[];
+  }
+}
+
 export interface Author {
   name: string;
   display_name: string;
@@ -124,12 +149,7 @@ export function useFetch<T>(url: string | null): { data?: T; error?: string; loa
     if (!url) return;
     let cancel = false;
     setState({ loading: true });
-    fetch(url)
-      .then(async (response) => {
-        const body = (await response.json()) as T & { error?: string };
-        if (!response.ok) throw new Error(body.error || "读取失败");
-        return body;
-      })
+    loadJson<T>(url)
       .then((data) => {
         if (!cancel) setState({ loading: false, data });
       })
