@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { CopyButton, formatTime } from "../format";
 import { ProfileSeal, RankMark } from "../seal";
@@ -129,6 +129,8 @@ export function Steward() {
       {self.status === "frozen" ? <p className="warn">此身已被停言。</p> : null}
       {self.reward_debt ? <p className="warn">待追回奖励 {self.reward_debt}，后续入账将优先抵扣。</p> : null}
       {self.credits_locked ? <p className="warn">道韵已被封住。</p> : null}
+      <PresenceLog times={self.presence ?? []} />
+      <MyRealms />
       {steward ? (
         <div className="tabs">
           <button className={panel === "invites" ? "on" : ""} type="button" onClick={() => setPanel("invites")}>邀请码</button>
@@ -287,5 +289,136 @@ function InviteTable({ invites, steward, onFreeze }: { invites: SessionInvite[];
         </tbody>
       </table>
     </div>
+  );
+}
+
+interface MineRoom {
+  room_id: string;
+  name: string;
+  nickname: string;
+  open: boolean;
+  owner_member?: boolean;
+  member_count?: number;
+}
+
+function PresenceLog({ times }: { times: number[] }) {
+  const ordered = [...times].sort((a, b) => b - a);
+  return (
+    <section className="mine-realms">
+      <h2>上线</h2>
+      {ordered.length === 0 ? <p className="muted">还没有上线记录。</p> : null}
+      <ol className="presence-log">
+        {ordered.map((time, index) => (
+          <li key={`${time}-${index}`}>
+            <time dateTime={new Date(time).toISOString()}>{formatTime(time)}</time>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function MyRealms() {
+  const { call } = useSession();
+  const [rooms, setRooms] = useState<MineRoom[] | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancel = false;
+    void call("/api/channels/mine", "GET")
+      .then((data) => {
+        if (cancel) return;
+        const list = (data as { rooms?: MineRoom[] }).rooms ?? [];
+        setRooms(list.filter((room) => room.owner_member));
+      })
+      .catch((reason: unknown) => {
+        if (!cancel) setError(reason instanceof Error ? reason.message : "洞天读取失败");
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [call]);
+
+  return (
+    <section className="mine-realms">
+      <h2>洞天</h2>
+      <p className="muted">在这里集中管理自己开辟的洞天。洞天令一直有效，查看不会更换。只有确认泄漏后才更换，旧令随即失效。</p>
+      {error ? <p className="warn">{error}</p> : null}
+      {rooms === null && !error ? <p className="muted">读取中</p> : null}
+      {rooms && rooms.length === 0 ? <p className="empty">还没有自己开辟的洞天。</p> : null}
+      <div className="mine-rooms">
+        {rooms?.map((room) => <RoomKey key={room.room_id} room={room} />)}
+      </div>
+    </section>
+  );
+}
+
+function RoomKey({ room }: { room: MineRoom }) {
+  const { call } = useSession();
+  const [shown, setShown] = useState("");
+  const [missing, setMissing] = useState(false);
+  const [armed, setArmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function reveal() {
+    setBusy(true);
+    setError("");
+    try {
+      const body = (await call(`/api/channels/${room.room_id}/key`, "GET")) as { room_key?: string; recoverable?: boolean };
+      if (!body.recoverable || !body.room_key) {
+        setMissing(true);
+        setShown("");
+        return;
+      }
+      setMissing(false);
+      setShown(body.room_key);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "读取失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function replace() {
+    if (!armed) {
+      setArmed(true);
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const body = (await call(`/api/channels/${room.room_id}/rotate-key`, "POST")) as { room_key?: string };
+      if (!body.room_key) throw new Error("更换失败");
+      setShown(body.room_key);
+      setMissing(false);
+      setArmed(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "更换失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <article className="mine-room">
+      <h3>
+        <Link to={`/realms/${room.room_id}`}>{room.nickname || room.name}</Link>
+      </h3>
+      <p className="meta">
+        <span>洞天名 {room.name}</span>
+        <span>{room.open ? "开放" : "未开放"}</span>
+        {room.member_count != null ? <span>{room.member_count} 位同道</span> : null}
+      </p>
+      {shown ? (
+        <p className="mine-secret"><code>{shown}</code><CopyButton text={shown} /></p>
+      ) : (
+        <button type="button" disabled={busy} onClick={() => void reveal()}>{busy && !armed ? "读取中…" : "查看洞天令"}</button>
+      )}
+      {missing ? <p className="muted">这把令开辟时没有留下可查看的原文，但它仍然有效。若你还保存着原令，可以继续使用。</p> : null}
+      <button type="button" disabled={busy} onClick={() => void replace()}>{busy && armed ? "更换中…" : armed ? "确认更换，旧令失效" : "令已泄漏，更换"}</button>
+      {armed ? <p className="muted">更换后请把新令交给同道。旧令不能再入境。</p> : null}
+      {error ? <p className="warn">{error}</p> : null}
+    </article>
   );
 }

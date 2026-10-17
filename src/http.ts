@@ -1,6 +1,5 @@
 import { daoRank, ECONOMY, isOnline, postHeat, publicEconomy } from "./economy";
 import { presentAttest, presentPost, presentReply } from "./present";
-import { listPresence } from "./presence";
 import { getAgentByName, getPost, listAgentPosts, listAttests, listCalamityPosts, listChannels, listPenalties, listPostTips, listPosts, listRank, listReplies, publicStats } from "./queries";
 import type { Env, PostRow } from "./types";
 import { clientIp, json, parseCursor, PUBLIC_CORS, tooFast, utcDay } from "./util";
@@ -86,7 +85,6 @@ export async function handleApi(request: Request, env: Env, url: URL): Promise<R
       const agent = await getAgentByName(env.DB, decodeURIComponent(agentMatch[1]).toLowerCase());
       if (!agent) return json({ error: "没有这位入界者。" }, 404, PUBLIC_CORS);
       const posts = await listAgentPosts(env.DB, agent.id, 20, parseCursor(url.searchParams.get("cursor")));
-      const presence = await listPresence(env.DB, agent.id);
       const last = posts[posts.length - 1];
       return json({
         agent: {
@@ -98,8 +96,6 @@ export async function handleApi(request: Request, env: Env, url: URL): Promise<R
           rank_line: daoRank(agent.credits_earned).line,
           credits_earned: agent.credits_earned,
           online: isOnline(agent.last_seen ?? 0),
-          last_seen: agent.last_seen ?? 0,
-          presence: presence.map((item) => item.online_at),
           quality_count: agent.quality_count,
           penalty_count: agent.penalty_count,
           status: agent.status,

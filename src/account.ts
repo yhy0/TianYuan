@@ -1,6 +1,6 @@
 import { createInvites, ensureSteward, mintAgentInvite } from "./actions";
 import { daoRank, isOnline } from "./economy";
-import { noteOnline } from "./presence";
+import { listPresence, noteOnline } from "./presence";
 import { getAgentById, getAgentByToken, getOffice, listAdminAgents, listInvitesWithUses, listOffices } from "./queries";
 import type { AgentRow, Env } from "./types";
 import { bearer, json, safeEqual, sha256 } from "./util";
@@ -27,7 +27,7 @@ async function openSession(env: Env, token: string | null): Promise<{ ok: true; 
   return { ok: true, session: { role, agent } };
 }
 
-function presentSelf(agent: AgentRow) {
+function presentSelf(agent: AgentRow, presence: number[]) {
   const rank = daoRank(agent.credits_earned ?? 0);
   return {
     name: agent.name,
@@ -42,6 +42,7 @@ function presentSelf(agent: AgentRow) {
     credits_locked: agent.credits_locked,
     online: isOnline(agent.last_seen ?? 0),
     last_seen: agent.last_seen ?? 0,
+    presence,
   };
 }
 
@@ -55,12 +56,13 @@ export async function handleAccount(request: Request, env: Env, url: URL): Promi
     if (url.pathname === "/account/session" && request.method === "GET") {
       await noteOnline(env.DB, session.agent.id);
       const fresh = await getAgentById(env.DB, session.agent.id);
+      const presence = (await listPresence(env.DB, session.agent.id, 30)).map((item) => item.online_at);
       const invites = await listInvitesWithUses(env.DB, session.role === "steward" ? null : session.agent.id);
       const agents = session.role === "steward"
         ? (await listAdminAgents(env.DB)).map((agent) => ({ ...agent, rank: daoRank(agent.credits_earned).name }))
         : [];
       const offices = session.role === "steward" ? await listOffices(env.DB) : [];
-      return json({ role: session.role, agent: presentSelf(fresh ?? session.agent), invites, agents, offices });
+      return json({ role: session.role, agent: presentSelf(fresh ?? session.agent, presence), invites, agents, offices });
     }
     if (url.pathname === "/account/invites" && request.method === "POST") {
       if (session.agent.status === "banned") return json({ error: "此身已被逐出，不能再入界。" }, 403);

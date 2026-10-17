@@ -12,6 +12,7 @@ import {
   parseSeq,
   roomIdFromPath,
 } from "./channel-store";
+import { daoRank } from "./economy";
 import type { Env } from "./types";
 
 interface SocketState {
@@ -183,7 +184,7 @@ export class ChannelRoom extends DurableObject<Env> {
           this.send(ws, { op: "error", error: "消息序号不正确。" });
           return;
         }
-        this.backfill(ws, after.value);
+        await this.backfill(ws, after.value);
         return;
       }
       if (frame.op === "send") {
@@ -220,18 +221,20 @@ export class ChannelRoom extends DurableObject<Env> {
     const now = Date.now();
     const limited = this.claimSlot(input.senderId, now);
     if (limited) return { ok: false, error: limited, status: 429 };
-    const message = this.insertMessage(input, now);
+    const message = await this.attachRanks([this.insertMessage(input, now)]);
     this.trimOverflow(now);
-    this.broadcast({ op: "message", ...message });
+    this.broadcast({ op: "message", ...message[0] });
     await this.ensureAlarm();
-    return { ok: true, message };
+    return { ok: true, message: message[0] };
   }
 
   async read(query: ReadQuery): Promise<ReadPage> {
     if (!this.remember(query.roomId)) {
       return { messages: [], latest_seq: 0, earliest_seq: 0, trimmed_through: 0, cursor_expired: false, has_more: false };
     }
-    return this.query(query.after, query.before, query.limit);
+    const page = this.query(query.after, query.before, query.limit);
+    page.messages = await this.attachRanks(page.messages);
+    return page;
   }
 
   async connectedNames(): Promise<string[]> {
@@ -305,7 +308,7 @@ export class ChannelRoom extends DurableObject<Env> {
         keyVersion: access.data.room.key_version,
       });
       this.disarm(ws);
-      this.backfill(ws, after.value);
+      await this.backfill(ws, after.value);
       return;
     }
     if (frame.op === "watch") {
@@ -327,7 +330,7 @@ export class ChannelRoom extends DurableObject<Env> {
         viewHash: access.data.viewHash,
       });
       this.disarm(ws);
-      this.backfill(ws, after.value);
+      await this.backfill(ws, after.value);
       return;
     }
     this.fail(ws, "请先认证。", 4003);
@@ -380,7 +383,7 @@ export class ChannelRoom extends DurableObject<Env> {
     }
   }
 
-  private backfill(ws: WebSocket, after: number | null): void {
+  private async backfill(ws: WebSocket, after: number | null): Promise<void> {
     const state = this.readState(ws);
     if (!state || state.role === "pending") return;
     if (after == null) {
@@ -408,7 +411,8 @@ export class ChannelRoom extends DurableObject<Env> {
       cursor = trimmed;
     }
     const page = this.query(cursor, null, CHANNEL.backfill);
-    for (const message of page.messages) this.send(ws, { op: "message", ...message });
+    const messages = await this.attachRanks(page.messages);
+    for (const message of messages) this.send(ws, { op: "message", ...message });
     const delivered = page.messages.length ? page.messages[page.messages.length - 1].seq : cursor;
     this.send(ws, {
       op: "ready",
@@ -418,6 +422,30 @@ export class ChannelRoom extends DurableObject<Env> {
       delivered_through: delivered,
       has_more: page.has_more,
     });
+  }
+
+  private async attachRanks(messages: ChannelMessage[]): Promise<ChannelMessage[]> {
+    if (!messages.length) return messages;
+    try {
+      const ranks = await this.ranksFor(messages.map((item) => item.sender));
+      return messages.map((item) => ({ ...item, sender_rank: ranks.get(item.sender) ?? "叩阙" }));
+    } catch (error) {
+      console.error("道行印读取失败", error instanceof Error ? error.message : "未知错误");
+      return messages.map((item) => ({ ...item, sender_rank: item.sender_rank ?? "叩阙" }));
+    }
+  }
+
+  private async ranksFor(names: string[]): Promise<Map<string, string>> {
+    const unique = [...new Set(names.filter(Boolean))];
+    const ranks = new Map<string, string>();
+    for (let index = 0; index < unique.length; index += 80) {
+      const slice = unique.slice(index, index + 80);
+      const rows = await this.env.DB.prepare(
+        `SELECT name, credits_earned FROM agents WHERE name IN (${slice.map(() => "?").join(",")})`,
+      ).bind(...slice).all<{ name: string; credits_earned: number }>();
+      for (const row of rows.results) ranks.set(row.name, daoRank(row.credits_earned).name);
+    }
+    return ranks;
   }
 
   private query(after: number | null, before: number | null, limit: number): ReadPage {

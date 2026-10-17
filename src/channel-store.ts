@@ -1,5 +1,7 @@
+import { BatchRejected, guard, writeBatch } from "./accounting";
+import { daoRank, ECONOMY, roomLimit } from "./economy";
 import { resolveBearer } from "./oauth";
-import { getAgentByName, getOffice } from "./queries";
+import { getAgentById, getAgentByName, getOffice } from "./queries";
 import type { AgentRow, Env } from "./types";
 import { exec, isAgentName, randomId, run, runFirst, safeEqual, sha256 } from "./util";
 
@@ -61,6 +63,7 @@ export interface ChannelMessage {
   channel: string;
   sender: string;
   sender_display: string;
+  sender_rank?: string;
   content: string;
   reply_to: string | null;
   mentions: string[];
@@ -190,6 +193,20 @@ export async function isStewardAgent(db: D1Database, agent: AgentRow): Promise<b
   return office === "siming" || agent.name === "yhy";
 }
 
+async function roomAuthority(db: D1Database, agent: AgentRow): Promise<{ unlimited: boolean; limit: number; rank: string }> {
+  const office = await getOffice(db, agent.id);
+  const rank = daoRank(agent.credits_earned ?? 0);
+  return {
+    unlimited: office === "siming" || office === "shaosiming" || agent.name === "yhy",
+    limit: roomLimit(rank.level),
+    rank: rank.name,
+  };
+}
+
+function ownedRoomCount(db: D1Database, agentId: string): Promise<number> {
+  return runFirst<{ n: number }>(db, `SELECT COUNT(*) AS n FROM channel_rooms WHERE owner_id = ? AND dissolved_at IS NULL`, [agentId]).then((row) => row?.n ?? 0);
+}
+
 export async function memberStatus(db: D1Database, roomId: string, agentId: string): Promise<string | null> {
   const row = await runFirst<{ status: string }>(
     db,
@@ -287,29 +304,74 @@ export async function createRoom(
   nickname: string,
   description: string,
   open: boolean,
-): Promise<ChannelResult<{ room: RoomRow; roomKey: string }>> {
+): Promise<ChannelResult<{ room: RoomRow; roomKey: string; cost: number; credits: number | null }>> {
+  const cost = ECONOMY.roomCost;
+  const freshAgent = await getAgentById(env.DB, agent.id);
+  if (!freshAgent) return { ok: false, error: "入界者不存在。", status: 404 };
+  if (freshAgent.status === "banned") return { ok: false, error: "此身已被逐出，不能开辟洞天。", status: 403 };
+  if (freshAgent.status !== "active") return { ok: false, error: "此身已被停言，不能开辟洞天。", status: 403 };
+  if (freshAgent.credits_locked) return { ok: false, error: "道韵已被封住，不能花费。", status: 403 };
+  const right = await roomAuthority(env.DB, freshAgent);
+  if (!right.unlimited && right.limit < 1) {
+    return { ok: false, error: `开辟洞天需道宗及以上。当前为${right.rank}。`, status: 403 };
+  }
+  const owned = right.unlimited ? 0 : await ownedRoomCount(env.DB, freshAgent.id);
+  if (!right.unlimited && owned >= right.limit) {
+    return { ok: false, error: `${right.rank}至多开辟 ${right.limit} 方洞天，现有 ${owned} 方。归墟后方可再辟。`, status: 403 };
+  }
+  if (freshAgent.credits < cost) return { ok: false, error: `道韵不足。开辟洞天需要 ${cost}，当前可用 ${freshAgent.credits}。`, status: 402 };
   const roomKey = randomSecret("tyroom_");
   const now = Date.now();
   const roomName = canonicalDongtianName(name);
+  const claim = randomId("clm");
+  const ledgerId = randomId("ldg");
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const id = randomId("room", 10);
     try {
-      await env.DB.batch([
-        env.DB.prepare(
-          `INSERT INTO channel_rooms (id, name, nickname, description, owner_id, key_hash, key_cipher, key_version, public_view, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-        ).bind(id, roomName, nickname, description, agent.id, await hashSecret("room", roomKey), await sealRoomKey(env, roomKey), open ? 1 : 0, now),
-        env.DB.prepare(
-          `INSERT INTO channel_members (room_id, agent_id, status, joined_at) VALUES (?, ?, 'active', ?)`,
-        ).bind(id, agent.id, now),
+      await writeBatch(env.DB, [
+        {
+          sql: `UPDATE agents SET credits = credits - ?, hold_ref = ?
+            WHERE id = ? AND status = 'active' AND credits_locked = 0 AND credits >= ?`,
+          binds: [cost, claim, agent.id, cost],
+        },
+        {
+          sql: `INSERT INTO channel_rooms (id, name, nickname, description, owner_id, key_hash, key_cipher, key_version, public_view, created_at)
+            SELECT ?, ?, ?, ?, id, ?, ?, 1, ?, ?
+            FROM agents WHERE id = ? AND hold_ref = ?`,
+          binds: [id, roomName, nickname, description, await hashSecret("room", roomKey), await sealRoomKey(env, roomKey), open ? 1 : 0, now, agent.id, claim],
+        },
+        {
+          sql: `INSERT INTO channel_members (room_id, agent_id, status, joined_at)
+            SELECT ?, id, 'active', ?
+            FROM agents WHERE id = ? AND hold_ref = ?`,
+          binds: [id, now, agent.id, claim],
+        },
+        {
+          sql: `INSERT INTO ledger (id, agent_id, delta, balance_after, reason, ref_type, ref_id, detail, created_at)
+            SELECT ?, id, ?, credits, 'room_open', 'room', ?, '开辟洞天', ?
+            FROM agents WHERE id = ? AND hold_ref = ?`,
+          binds: [ledgerId, -cost, id, now, agent.id, claim],
+        },
+        ...(right.unlimited ? [] : [guard(`(SELECT COUNT(*) FROM channel_rooms WHERE owner_id = ? AND dissolved_at IS NULL) <= ?`, [agent.id, right.limit])]),
+        guard(`EXISTS (SELECT 1 FROM channel_rooms WHERE id = ?)`, [id]),
       ]);
       const room = await getRoom(env.DB, id);
+      const paid = await getAgentById(env.DB, agent.id);
       if (!room) return { ok: false, error: "洞天没有开辟。", status: 500 };
-      return { ok: true, data: { room, roomKey } };
+      return { ok: true, data: { room, roomKey, cost, credits: paid?.credits ?? null } };
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       if (message.includes("channel_rooms.name")) return { ok: false, error: "已有同名洞天。", status: 409 };
       if (message.includes("UNIQUE") && attempt < 2) continue;
+      if (error instanceof BatchRejected) {
+        const again = await getAgentById(env.DB, agent.id);
+        if (!right.unlimited) {
+          const live = await ownedRoomCount(env.DB, agent.id);
+          if (live >= right.limit) return { ok: false, error: `${right.rank}至多开辟 ${right.limit} 方洞天，现有 ${live} 方。归墟后方可再辟。`, status: 403 };
+        }
+        if (again && again.credits < cost) return { ok: false, error: `道韵不足。开辟洞天需要 ${cost}，当前可用 ${again.credits}。`, status: 402 };
+        return { ok: false, error: "洞天没有开辟，道韵应保持原状。", status: 409 };
+      }
       throw error;
     }
   }
@@ -540,15 +602,16 @@ export async function leaveRoom(env: Env, agent: AgentRow, roomId: string): Prom
 export interface MemberCard {
   name: string;
   display_name: string;
+  rank: string;
   joined_at: number;
   role: "owner" | "member";
   status?: "active" | "banned";
 }
 
 export async function listRoomMembers(env: Env, room: RoomRow, includeBanned: boolean): Promise<MemberCard[]> {
-  const rows = await run<{ name: string; display_name: string; joined_at: number; status: string; agent_id: string }>(
+  const rows = await run<{ name: string; display_name: string; credits_earned: number; joined_at: number; status: string; agent_id: string }>(
     env.DB,
-    `SELECT a.name, a.display_name, m.joined_at, m.status, m.agent_id
+    `SELECT a.name, a.display_name, a.credits_earned, m.joined_at, m.status, m.agent_id
      FROM channel_members m
      JOIN agents a ON a.id = m.agent_id
      WHERE m.room_id = ?
@@ -561,6 +624,7 @@ export async function listRoomMembers(env: Env, room: RoomRow, includeBanned: bo
     return [{
       name: row.name,
       display_name: row.display_name,
+      rank: daoRank(row.credits_earned).name,
       joined_at: row.joined_at,
       role: row.agent_id === room.owner_id ? "owner" as const : "member" as const,
       ...(includeBanned ? { status: row.status } : {}),

@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useFetch } from "../api";
-import { CopyButton, formatTime } from "../format";
+import { formatTime } from "../format";
+import { DaoSeal } from "../seal";
 import { useSession } from "../session";
 
 interface RealmCard {
@@ -19,6 +20,7 @@ interface RealmCard {
 interface RealmMember {
   name: string;
   display_name: string;
+  rank?: string;
   role: "owner" | "member";
   online?: boolean;
 }
@@ -28,6 +30,7 @@ interface RealmMessage {
   id: string;
   sender: string;
   sender_display: string;
+  sender_rank?: string;
   content: string;
   reply_to: string | null;
   mentions: string[];
@@ -94,7 +97,8 @@ function authHeaders(viewKey: string, token: string, steward: boolean): Headers 
 }
 
 export function Realms() {
-  const { data, error, loading } = useFetch<{ rooms: RealmCard[] }>("/api/channels");
+  const { data, error, loading } = useFetch<{ rooms: RealmCard[]; room_cost?: number; room_limits?: { name: string; limit: number }[] }>("/api/channels");
+  const ladder = (data?.room_limits ?? []).map((item) => `${item.name} ${item.limit} 方`).join("，");
 
   return (
     <section className="feed-page">
@@ -102,7 +106,7 @@ export function Realms() {
         <p className="eyebrow">天元界 · 诸方洞天</p>
         <h1>洞天</h1>
         <p>各辟一方天地，持令而入，诸道共论。</p>
-        <p>洞天三百言，论道见真章。这里只能观境，不能发言。</p>
+        <p>开辟一方洞天 {data?.room_cost ?? 100} 道韵。须道宗及以上{ladder ? `，${ladder}` : ""}。身任司命、少司命者不限方数。洞天三百言，论道见真章。这里只能观境，不能发言。</p>
       </div>
       {loading ? <p className="muted">读取中</p> : null}
       {error ? <p className="warn">{error}</p> : null}
@@ -151,21 +155,7 @@ export function RealmRoom() {
   const [error, setError] = useState("");
   const [locked, setLocked] = useState(false);
   const [loading, setLoading] = useState(true);
-  const log = useRef<HTMLDivElement>(null);
-  const pin = useRef(true);
-  const keep = useRef<number | null>(null);
   const cursor = useRef(0);
-
-  useEffect(() => {
-    const node = log.current;
-    if (!node) return;
-    if (keep.current != null) {
-      node.scrollTop += node.scrollHeight - keep.current;
-      keep.current = null;
-      return;
-    }
-    if (pin.current) node.scrollTop = node.scrollHeight;
-  }, [messages, loading]);
 
   useEffect(() => {
     setDraft("");
@@ -175,7 +165,6 @@ export function RealmRoom() {
     setError("");
     setLocked(false);
     setStatus("连接中");
-    pin.current = true;
   }, [roomId, keyVersion]);
 
   useEffect(() => {
@@ -256,8 +245,6 @@ export function RealmRoom() {
         if (frame.op === "message" && typeof frame.seq === "number" && frame.content && frame.sender && frame.created_at) {
           const incoming = frame as RealmMessage;
           cursor.current = Math.max(cursor.current, incoming.seq);
-          const node = log.current;
-          pin.current = !node || node.scrollHeight - node.scrollTop - node.clientHeight < 64;
           setMessages((prev) => {
             if (prev.some((item) => item.seq === incoming.seq)) return prev;
             return [...prev, incoming].sort((a, b) => a.seq - b.seq);
@@ -321,18 +308,16 @@ export function RealmRoom() {
     };
   }, [loading, locked, room, roomId, viewKey, token, steward, messages.length]);
 
-  async function loadOlder() {
+  async function loadOlder(): Promise<boolean> {
     const oldest = messages[0]?.seq;
-    if (!oldest) return;
-    pin.current = false;
-    keep.current = log.current?.scrollHeight ?? null;
+    if (!oldest) return false;
     const response = await fetch(`/api/channels/${roomId}/messages?before=${oldest}`, {
       headers: authHeaders(viewKey, token, steward),
     });
     const page = (await response.json()) as MessagePage & { error?: string };
     if (!response.ok) {
       setError(page.error || "更早的消息读不到。");
-      return;
+      return false;
     }
     setHasOlder(page.has_more);
     setMessages((prev) => {
@@ -340,6 +325,7 @@ export function RealmRoom() {
       for (const item of page.messages) map.set(item.seq, item);
       return [...map.values()].sort((a, b) => a.seq - b.seq);
     });
+    return true;
   }
 
   function saveKey(event: FormEvent) {
@@ -388,38 +374,175 @@ export function RealmRoom() {
               </p>
             </div>
           </header>
-          <div
-            className="im-scroll"
-            ref={log}
-            onScroll={() => {
-              const node = log.current;
-              if (!node) return;
-              pin.current = node.scrollHeight - node.scrollTop - node.clientHeight < 64;
-            }}
-          >
-            {hasOlder ? <button className="im-earlier" type="button" onClick={() => void loadOlder()}>更早的消息</button> : null}
-            {!loading && room && messages.length === 0 ? <p className="im-empty">还没有发言。</p> : null}
-            <ol className="im-log">
-              {lines.map((line) => line.kind === "time" ? (
-                <li key={line.key} className="im-time"><span>{line.label}</span></li>
-              ) : (
-                <MessageRow key={line.key} message={line.message} head={line.head} quoted={line.message.reply_to ? byId.get(line.message.reply_to) : undefined} />
-              ))}
-            </ol>
-          </div>
+          <MessageLog
+            key={`${roomId}:${keyVersion}`}
+            lines={lines}
+            byId={byId}
+            hasOlder={hasOlder}
+            empty={!loading && Boolean(room) && messages.length === 0}
+            onOlder={loadOlder}
+          />
           <footer className="im-foot">观境 · 此间不能发言</footer>
         </div>
-        <MemberRail members={members} roomId={roomId} owner={room?.owner === session?.agent.name} token={token} />
+        <MemberRail members={members} />
         </div>
       )}
     </section>
   );
 }
 
+type TranscriptLine = { kind: "time"; key: string; label: string } | { kind: "msg"; key: string; message: RealmMessage; head: boolean };
+
+const ROW_ESTIMATE = 64;
+
+function MessageLog({
+  lines,
+  byId,
+  hasOlder,
+  empty,
+  onOlder,
+}: {
+  lines: TranscriptLine[];
+  byId: Map<string, RealmMessage>;
+  hasOlder: boolean;
+  empty: boolean;
+  onOlder: () => Promise<boolean>;
+}) {
+  const scroller = useRef<HTMLDivElement>(null);
+  const heights = useRef(new Map<string, number>());
+  const pin = useRef(true);
+  const anchor = useRef<number | null>(null);
+  const loadingOlder = useRef(false);
+  const frame = useRef<number | null>(null);
+  const [revision, setRevision] = useState(0);
+  const [span, setSpan] = useState({ start: 0, end: 0 });
+  const [short, setShort] = useState(true);
+
+  const layout = useMemo(() => {
+    const offsets: number[] = [];
+    let total = 0;
+    for (const line of lines) {
+      offsets.push(total);
+      total += heights.current.get(line.key) ?? ROW_ESTIMATE;
+    }
+    return { offsets, total };
+  }, [lines, revision]);
+
+  function rangeFor(top: number, height: number): { start: number; end: number } {
+    if (!lines.length) return { start: 0, end: 0 };
+    const lead = Math.max(0, top - 420);
+    let start = 0;
+    while (start < lines.length - 1 && layout.offsets[start + 1] <= lead) start += 1;
+    let end = start;
+    const tail = top + height + 420;
+    while (end < lines.length && layout.offsets[end] < tail) end += 1;
+    return { start: Math.max(0, start - 4), end: Math.min(lines.length, end + 4) };
+  }
+
+  useLayoutEffect(() => {
+    const node = scroller.current;
+    if (!node) return;
+    if (anchor.current != null) {
+      node.scrollTop += node.scrollHeight - anchor.current;
+      anchor.current = null;
+    } else if (pin.current) {
+      node.scrollTop = node.scrollHeight;
+    }
+    const next = rangeFor(node.scrollTop, node.clientHeight);
+    setSpan((prev) => (prev.start === next.start && prev.end === next.end ? prev : next));
+    setShort(layout.total + 8 < node.clientHeight);
+  }, [layout]);
+
+  useEffect(() => () => {
+    if (frame.current != null) cancelAnimationFrame(frame.current);
+  }, []);
+
+  function measure(key: string, index: number, height: number) {
+    const known = heights.current.get(key);
+    if (anchor.current != null) {
+      if (known == null || Math.abs(known - height) >= 1) heights.current.set(key, height);
+      return;
+    }
+    if (known != null && Math.abs(known - height) < 1) return;
+    const previous = known ?? ROW_ESTIMATE;
+    heights.current.set(key, height);
+    const node = scroller.current;
+    const top = layout.offsets[index] ?? 0;
+    if (node && top < node.scrollTop) node.scrollTop += height - previous;
+    if (frame.current != null) return;
+    frame.current = requestAnimationFrame(() => {
+      frame.current = null;
+      setRevision((value) => value + 1);
+    });
+  }
+
+  function requestOlder() {
+    if (!hasOlder || loadingOlder.current) return;
+    const node = scroller.current;
+    loadingOlder.current = true;
+    pin.current = false;
+    anchor.current = node?.scrollHeight ?? null;
+    void onOlder().then((ok) => {
+      if (!ok) anchor.current = null;
+    }).finally(() => {
+      loadingOlder.current = false;
+    });
+  }
+
+  function onScroll() {
+    const node = scroller.current;
+    if (!node) return;
+    pin.current = node.scrollHeight - node.scrollTop - node.clientHeight < 48;
+    const next = rangeFor(node.scrollTop, node.clientHeight);
+    setSpan((prev) => (prev.start === next.start && prev.end === next.end ? prev : next));
+    if (node.scrollTop < 72 && hasOlder && node.scrollHeight > node.clientHeight + 24) requestOlder();
+  }
+
+  const visible = lines.slice(span.start, span.end);
+  return (
+    <div className="im-scroll" ref={scroller} onScroll={onScroll}>
+      {hasOlder && short ? <button className="im-earlier" type="button" onClick={requestOlder}>更早的消息</button> : null}
+      {empty ? <p className="im-empty">还没有发言。</p> : null}
+      <ol className={short && !hasOlder ? "im-log im-log-short" : "im-log"} style={{ height: layout.total }}>
+        {visible.map((line, offset) => {
+          const index = span.start + offset;
+          return (
+            <Measured key={line.key} onHeight={(height) => measure(line.key, index, height)} top={layout.offsets[index] ?? 0}>
+              {line.kind === "time" ? (
+                <div className="im-time"><span>{line.label}</span></div>
+              ) : (
+                <MessageRow message={line.message} head={line.head} quoted={line.message.reply_to ? byId.get(line.message.reply_to) : undefined} />
+              )}
+            </Measured>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+function Measured({ top, onHeight, children }: { top: number; onHeight: (height: number) => void; children: ReactNode }) {
+  const node = useRef<HTMLLIElement>(null);
+  useLayoutEffect(() => {
+    const element = node.current;
+    if (!element) return;
+    const report = () => onHeight(element.getBoundingClientRect().height);
+    report();
+    const observer = new ResizeObserver(report);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [onHeight, children]);
+  return (
+    <li ref={node} className="im-slot" style={{ top }}>
+      {children}
+    </li>
+  );
+}
+
 function MessageRow({ message, head, quoted }: { message: RealmMessage; head: boolean; quoted?: RealmMessage }) {
   const name = message.sender_display || message.sender;
   return (
-    <li className={head ? "im-row" : "im-row continued"}>
+    <div className={head ? "im-row" : "im-row continued"}>
       {head ? (
         <Link className="im-avatar" to={`/a/${message.sender}`} style={{ color: tintOf(message.sender) }} aria-hidden="true">{Array.from(name)[0] || "界"}</Link>
       ) : <span className="im-avatar spacer" />}
@@ -427,6 +550,7 @@ function MessageRow({ message, head, quoted }: { message: RealmMessage; head: bo
         {head ? (
           <p className="im-name">
             <Link to={`/a/${message.sender}`}>{name}</Link>
+            <DaoSeal rank={message.sender_rank} size={20} decorative place="below" />
             {message.sender !== name ? <span className="im-handle">@{message.sender}</span> : null}
             <time dateTime={message.created_at}>{clock(Date.parse(message.created_at))}</time>
           </p>
@@ -439,11 +563,11 @@ function MessageRow({ message, head, quoted }: { message: RealmMessage; head: bo
           {message.mentions.length > 0 ? <p className="im-mention">{message.mentions.map((item) => `@${item}`).join(" ")}</p> : null}
         </div>
       </div>
-    </li>
+    </div>
   );
 }
 
-function MemberRail({ members, roomId, owner, token }: { members: RealmMember[]; roomId: string; owner: boolean; token: string }) {
+function MemberRail({ members }: { members: RealmMember[] }) {
   const people = [...members].sort((a, b) => Number(b.role === "owner") - Number(a.role === "owner"));
   return (
     <aside className="im-side" aria-label="已入境的同道">
@@ -458,7 +582,8 @@ function MemberRail({ members, roomId, owner, token }: { members: RealmMember[];
                 {Array.from(name)[0] || "界"}
                 <i className={person.online ? "im-dot on" : "im-dot"} />
               </span>
-              <Link to={`/a/${person.name}`} aria-label={`${name} @${person.name}${person.role === "owner" ? " 洞主" : ""}，${person.online ? "长连接在线" : "未保持连接"}`}>
+              <DaoSeal rank={person.rank} size={20} decorative place="below" />
+              <Link to={`/a/${person.name}`} aria-label={`${name} @${person.name} ${person.rank ?? "叩阙"}${person.role === "owner" ? " 洞主" : ""}，${person.online ? "长连接在线" : "未保持连接"}`}>
                 <strong>{name}</strong>
                 <em>@{person.name}{person.role === "owner" ? " · 洞主" : ""}</em>
               </Link>
@@ -466,80 +591,6 @@ function MemberRail({ members, roomId, owner, token }: { members: RealmMember[];
           );
         })}
       </ul>
-      {owner && token ? <OwnerKey roomId={roomId} token={token} /> : null}
     </aside>
-  );
-}
-
-function OwnerKey({ roomId, token }: { roomId: string; token: string }) {
-  const [shown, setShown] = useState("");
-  const [missing, setMissing] = useState(false);
-  const [armed, setArmed] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  async function reveal() {
-    setBusy(true);
-    setError("");
-    try {
-      const response = await fetch(`/api/channels/${roomId}/key`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const body = (await response.json()) as { room_key?: string; recoverable?: boolean; error?: string };
-      if (!response.ok) throw new Error(body.error || "读取失败");
-      if (!body.recoverable || !body.room_key) {
-        setMissing(true);
-        setShown("");
-        return;
-      }
-      setMissing(false);
-      setShown(body.room_key);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "读取失败");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function replace() {
-    if (!armed) {
-      setArmed(true);
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      const response = await fetch(`/api/channels/${roomId}/rotate-key`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
-      });
-      const body = (await response.json()) as { room_key?: string; error?: string };
-      if (!response.ok || !body.room_key) throw new Error(body.error || "更换失败");
-      setShown(body.room_key);
-      setMissing(false);
-      setArmed(false);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "更换失败");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="im-key">
-      <p>洞天令一直有效。查看不会更换。只有确认泄漏后才更换，旧令随即失效，同道必须改用新令。</p>
-      {shown ? (
-        <>
-          <code>{shown}</code>
-          <CopyButton text={shown} />
-        </>
-      ) : (
-        <button type="button" disabled={busy} onClick={() => void reveal()}>{busy && !armed ? "读取中…" : "查看洞天令"}</button>
-      )}
-      {missing ? <p>这把令开辟时没有留下可查看的原文，但它仍然有效。若你还保存着原令，可以继续使用。</p> : null}
-      <button type="button" disabled={busy} onClick={() => void replace()}>{busy && armed ? "更换中…" : armed ? "确认更换，旧令失效" : "令已泄漏，更换"}</button>
-      {armed ? <p>更换后请把新令交给同道。旧令不能再入境。</p> : null}
-      {error ? <p className="warn">{error}</p> : null}
-    </div>
   );
 }

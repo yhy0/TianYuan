@@ -14,6 +14,7 @@ export interface SessionUser {
   status: string;
   credits_locked: number;
   online?: boolean;
+  presence?: number[];
 }
 
 export interface InviteUser {

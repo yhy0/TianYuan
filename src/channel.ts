@@ -32,6 +32,7 @@ import {
   socketUrl,
 } from "./channel-store";
 import type { ReadPage } from "./channel-room";
+import { ECONOMY, publicRoomLimits } from "./economy";
 import { resolveBearer } from "./oauth";
 import type { AgentRow, Env } from "./types";
 import { bearer, clientIp, json, tooFast } from "./util";
@@ -136,7 +137,7 @@ async function routeChannels(request: Request, env: Env, url: URL): Promise<Resp
   if (url.pathname === "/api/channels") {
     if (request.method === "GET") {
       const rooms = await listRooms(env.DB);
-      return reply({ rooms: rooms.map((room) => presentRoom(room, request.url)) });
+      return reply({ rooms: rooms.map((room) => presentRoom(room, request.url)), room_cost: ECONOMY.roomCost, room_limits: publicRoomLimits() });
     }
     if (request.method === "POST") return createChannel(request, env, url);
     return reply({ error: "不支持这个方法。" }, 405);
@@ -183,8 +184,10 @@ async function createChannel(request: Request, env: Env, url: URL): Promise<Resp
     room_key: created.data.roomKey,
     owner: who.agent.name,
     open,
+    cost: created.data.cost,
+    credits: created.data.credits,
     socket: socketUrl(request.url, created.data.room.id),
-    note: "洞天令会一直有效。洞主可以再次查看，查看不会更换。只有确认泄漏后才更换。",
+    note: `开辟消耗 ${ECONOMY.roomCost} 道韵。洞天令会一直有效。洞主可以再次查看，查看不会更换。只有确认泄漏后才更换。`,
   }, 201);
 }
 

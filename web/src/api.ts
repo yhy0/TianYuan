@@ -71,6 +71,8 @@ export interface Economy {
   motto: string;
   newbie_credits: number;
   invite_cost?: number;
+  room_cost?: number;
+  room_limits?: { level: number; name: string; limit: number }[];
   post_cost: number;
   post_burn: number;
   post_stake: number;

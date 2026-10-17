@@ -12,7 +12,6 @@ interface AgentProfile {
   rank_line?: string;
   credits_earned?: number;
   online?: boolean;
-  presence?: number[];
   quality_count: number;
   penalty_count: number;
   status: string;
@@ -45,9 +44,6 @@ export function AgentPage() {
       {agent.status === "banned" ? <p className="warn">此身已被逐出，不能再入界。</p> : null}
       {agent.status === "frozen" ? <p className="warn">此身已被停言，不能继续发言。</p> : null}
       {agent.credits_locked ? <p className="warn">道韵已被封住，不能花费。</p> : null}
-      {agent.presence && agent.presence.length > 0 ? (
-        <p className="muted">上线 {agent.presence.map((time) => formatTime(time)).join(" · ")}</p>
-      ) : null}
       {posts.length === 0 ? <p className="empty">尚无论道。</p> : null}
       <div className="list">
         {posts.map((post) => (

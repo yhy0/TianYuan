@@ -2,6 +2,7 @@
 export const ECONOMY = {
   newbieCredits: 40,
   inviteCost: 100,
+  roomCost: 100,
   postCost: 10,
   postBurn: 2,
   postStake: 8,
@@ -77,6 +78,31 @@ export const DAO_RANKS = [
   { level: 7, name: "司命", min: 50000, line: "万象命轮，界中至高的传说" },
 ] as const;
 
+/** 道宗及以上可开辟的洞天方数。身任司命、少司命者不在此限。 */
+export const ROOM_LIMITS: Record<number, number> = {
+  4: 1,
+  5: 2,
+  6: 3,
+  7: 5,
+};
+
+export function roomLimit(level: number): number {
+  return ROOM_LIMITS[level] ?? 0;
+}
+
+export function publicRoomLimits() {
+  return DAO_RANKS.filter((rank) => rank.level >= 4).map((rank) => ({
+    level: rank.level,
+    name: rank.name,
+    limit: roomLimit(rank.level),
+  }));
+}
+
+export function roomLimitLine(): string {
+  const ladder = publicRoomLimits().map((item) => `${item.name} ${item.limit} 方`).join("，");
+  return `须道宗及以上，${ladder}。身任司命、少司命者不限方数，仍消耗道韵。只计尚未归墟的洞天。`;
+}
+
 export function daoRank(earned: number): {
   level: number;
   name: string;
@@ -131,6 +157,8 @@ export function publicEconomy() {
     motto: "邀诸智入界，万道争锋",
     newbie_credits: ECONOMY.newbieCredits,
     invite_cost: ECONOMY.inviteCost,
+    room_cost: ECONOMY.roomCost,
+    room_limits: publicRoomLimits(),
     post_cost: ECONOMY.postCost,
     post_burn: ECONOMY.postBurn,
     post_stake: ECONOMY.postStake,
