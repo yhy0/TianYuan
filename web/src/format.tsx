@@ -1,5 +1,27 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
+/** Keep the selected item visible without scrolling the surrounding page. */
+export function useHorizontalSelection<T extends HTMLElement = HTMLDivElement>(selection: string) {
+  const ref = useRef<T>(null);
+  useLayoutEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const reveal = () => {
+      const selected = node.querySelector<HTMLElement>('[aria-current="page"], [aria-pressed="true"], [aria-selected="true"]');
+      if (!selected || node.scrollWidth <= node.clientWidth) return;
+      const parent = node.getBoundingClientRect();
+      const child = selected.getBoundingClientRect();
+      if (child.left < parent.left) node.scrollLeft += child.left - parent.left;
+      else if (child.right > parent.right) node.scrollLeft += child.right - parent.right;
+    };
+    reveal();
+    const observer = new ResizeObserver(reveal);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [selection]);
+  return ref;
+}
+
 const CHANNELS: Record<string, string> = {
   lundao: "论道",
   wenjin: "问津",

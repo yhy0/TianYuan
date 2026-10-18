@@ -1,12 +1,20 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useId, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { CopyButton, formatTime } from "../format";
+import { CopyButton, formatTime, useHorizontalSelection } from "../format";
 import { ProfileSeal, RankMark } from "../seal";
 import { useSession, type SessionInvite } from "../session";
 
+type AccountPanel = "invites" | "realms" | "presence" | "agents" | "settle" | "tianjie" | "office";
+
+function soft(value: string) {
+  return value.split(/([_.@-])/).map((part, index) => (index % 2 === 1 ? <span key={index}>{part}<wbr /></span> : part));
+}
+
 export function Steward() {
   const { session, loading, refresh, call } = useSession();
-  const [panel, setPanel] = useState<"invites" | "realms" | "presence" | "agents" | "settle" | "tianjie" | "office">("invites");
+  const [panel, setPanel] = useState<AccountPanel>("invites");
+  const tabs = useHorizontalSelection(`${session?.role}:${panel}`);
+  const panelId = useId();
   const [deputyName, setDeputyName] = useState("");
   const [target, setTarget] = useState("");
   const [penalty, setPenalty] = useState("10");
@@ -28,6 +36,14 @@ export function Steward() {
   const creditMax = deputy ? 50 : 500;
   const earnedMax = deputy ? 2000 : 20000;
   const self = session.agent;
+  const panels: { id: AccountPanel; label: string }[] = [
+    { id: "invites", label: "邀请码" },
+    { id: "realms", label: "洞天" },
+    { id: "presence", label: "上线日志" },
+    ...(steward ? [{ id: "agents" as const, label: "入界者" }, { id: "settle" as const, label: "裁决" }] : []),
+    ...(steward || deputy ? [{ id: "tianjie" as const, label: "天劫" }] : []),
+    ...(steward ? [{ id: "office" as const, label: "少司命" }] : []),
+  ];
 
   async function mint() {
     setMessage("");
@@ -114,9 +130,10 @@ export function Steward() {
   }
 
   return (
-    <section className="sheet">
+    <section className="sheet account-page">
+      <header className="account-overview">
       <ProfileSeal rank={self.rank} earned={self.credits_earned} size={64}>
-        <p className="eyebrow">{steward ? "司命" : "入界者"}</p>
+        <p className="eyebrow">我的 · {steward ? "司命" : deputy ? "少司命" : "入界者"}</p>
         <h1>{self.display_name}</h1>
       </ProfileSeal>
       <dl className="facts">
@@ -125,23 +142,30 @@ export function Steward() {
         <div><dt>锁韵</dt><dd>{self.staked}</dd></div>
         <div><dt>累积</dt><dd>{self.credits_earned}</dd></div>
       </dl>
+      </header>
       {self.status === "banned" ? <p className="warn">此身已被逐出。</p> : null}
       {self.status === "frozen" ? <p className="warn">此身已被停言。</p> : null}
       {self.reward_debt ? <p className="warn">待追回奖励 {self.reward_debt}，后续入账将优先抵扣。</p> : null}
       {self.credits_locked ? <p className="warn">道韵已被封住。</p> : null}
-      <div className="tabs" role="tablist" aria-label="我的">
-        <button className={panel === "invites" ? "on" : ""} type="button" role="tab" aria-selected={panel === "invites"} onClick={() => setPanel("invites")}>邀请码</button>
-        <button className={panel === "realms" ? "on" : ""} type="button" role="tab" aria-selected={panel === "realms"} onClick={() => setPanel("realms")}>洞天</button>
-        <button className={panel === "presence" ? "on" : ""} type="button" role="tab" aria-selected={panel === "presence"} onClick={() => setPanel("presence")}>上线日志</button>
-        {steward ? <button className={panel === "agents" ? "on" : ""} type="button" role="tab" aria-selected={panel === "agents"} onClick={() => setPanel("agents")}>入界者</button> : null}
-        {steward ? <button className={panel === "settle" ? "on" : ""} type="button" role="tab" aria-selected={panel === "settle"} onClick={() => setPanel("settle")}>裁决</button> : null}
-        {steward || deputy ? <button className={panel === "tianjie" ? "on" : ""} type="button" role="tab" aria-selected={panel === "tianjie"} onClick={() => setPanel("tianjie")}>天劫</button> : null}
-        {steward ? <button className={panel === "office" ? "on" : ""} type="button" role="tab" aria-selected={panel === "office"} onClick={() => setPanel("office")}>少司命</button> : null}
+      <div ref={tabs} className="tabs account-tabs" role="tablist" aria-label="我的" onKeyDown={(event) => {
+        const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+        const index = items.indexOf(document.activeElement as HTMLButtonElement);
+        if (index < 0) return;
+        const next = event.key === "ArrowRight" ? (index + 1) % items.length : event.key === "ArrowLeft" ? (index + items.length - 1) % items.length : event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : -1;
+        if (next < 0) return;
+        event.preventDefault();
+        setPanel(panels[next].id);
+        items[next].focus();
+      }}>
+        {panels.map((item) => <button key={item.id} id={`${panelId}-${item.id}`} className={panel === item.id ? "on" : ""} type="button" role="tab" aria-selected={panel === item.id} aria-controls={`${panelId}-content`} tabIndex={panel === item.id ? 0 : -1} onClick={() => setPanel(item.id)}>{item.label}</button>)}
       </div>
+      <section className="account-panel" id={`${panelId}-content`} role="tabpanel" aria-labelledby={`${panelId}-${panel}`}>
+      <h2>{panels.find((item) => item.id === panel)?.label}</h2>
       {panel === "presence" ? <PresenceLog times={self.presence ?? []} /> : null}
       {panel === "realms" ? <MyRealms /> : null}
       {panel === "invites" ? (
-        <>
+        <div className={steward ? "invites-layout" : "invites-layout member-invites"}>
+          <div className="invite-issue">
           {steward ? (
             <form onSubmit={(event) => void issue(event)} className="stack">
               <label>数量<input name="count" type="number" min={1} max={100} defaultValue={1} /></label>
@@ -154,6 +178,8 @@ export function Steward() {
           ) : (
             <button type="button" onClick={() => void mint()}>生成邀请码 · 100 道韵</button>
           )}
+          </div>
+          <div className="invite-history">
           {fresh.length > 0 ? (
             <>
               <p className="meta">刚生成<CopyButton text={fresh.join("\n")} /></p>
@@ -161,22 +187,23 @@ export function Steward() {
             </>
           ) : null}
           <InviteTable invites={session.invites} steward={steward} onFreeze={freezeCode} />
-        </>
+          </div>
+        </div>
       ) : null}
       {steward && panel === "agents" ? (
         <div className="table-wrap">
-          <table className="admin">
+          <table className="admin admin-responsive agents-table" aria-label="入界者">
             <thead>
               <tr><th>入界者</th><th>道韵</th><th>道行</th><th>状态</th><th /></tr>
             </thead>
             <tbody>
               {session.agents.map((agent) => (
                 <tr key={agent.name}>
-                  <td>{agent.display_name}<br /><span className="muted">@{agent.name}</span></td>
-                  <td>{agent.credits}{agent.credits_locked ? " · 封住" : ""}<br /><span className="muted">锁韵 {agent.staked}</span></td>
-                  <td><RankMark rank={agent.rank} size={16} quiet /><br /><span className="muted">累积 {agent.credits_earned ?? 0}</span></td>
-                  <td>{agent.online ? "在线" : "离线"} · {agent.status === "banned" ? "已逐出" : agent.status === "frozen" ? "已停言" : "在界"}</td>
-                  <td><div className="admin-actions">
+                  <td data-label="入界者">{agent.display_name}<br /><span className="muted">@{soft(agent.name)}</span></td>
+                  <td data-label="道韵">{agent.credits}{agent.credits_locked ? " · 封住" : ""}<br /><span className="muted">锁韵 {agent.staked}</span></td>
+                  <td data-label="道行"><RankMark rank={agent.rank} size={16} quiet /><br /><span className="muted">累积 {agent.credits_earned ?? 0}</span></td>
+                  <td data-label="状态">{agent.online ? "在线" : "离线"} · {agent.status === "banned" ? "已逐出" : agent.status === "frozen" ? "已停言" : "在界"}</td>
+                  <td data-label="操作"><div className="admin-actions">
                     <button type="button" onClick={() => void gate(agent.name, agent.status === "banned" ? "unban" : "ban")}>{agent.status === "banned" ? "准其复入" : "逐出"}</button>
                     <button type="button" onClick={() => void gate(agent.name, agent.credits_locked ? "unlock_credits" : "lock_credits")}>{agent.credits_locked ? "解封道韵" : "封住道韵"}</button>
                     {agent.status !== "banned" ? (
@@ -245,6 +272,7 @@ export function Steward() {
         </>
       ) : null}
       {message ? <p className="note">{message}</p> : null}
+      </section>
     </section>
   );
 }
@@ -252,7 +280,7 @@ export function Steward() {
 function InviteTable({ invites, steward, onFreeze }: { invites: SessionInvite[]; steward: boolean; onFreeze: (code: string, frozen: boolean) => void }) {
   return (
     <div className="table-wrap">
-      <table className="admin">
+      <table className={`admin admin-responsive invites-table${steward ? " governed" : ""}`} aria-label="邀请码记录">
         <thead>
           <tr><th>邀请码</th><th>使用</th><th>注册者</th>{steward ? <th>来源</th> : null}<th>状态</th>{steward ? <th /> : null}</tr>
         </thead>
@@ -260,20 +288,20 @@ function InviteTable({ invites, steward, onFreeze }: { invites: SessionInvite[];
           {invites.length === 0 ? <tr><td colSpan={steward ? 6 : 4}>还没有邀请码。</td></tr> : null}
           {invites.map((item) => (
             <tr key={item.code}>
-              <td>{item.code}</td>
-              <td>{item.used_count}/{item.max_uses}</td>
-              <td>
+              <td data-label="邀请码"><code>{item.code}</code></td>
+              <td data-label="使用">{item.used_count}/{item.max_uses}</td>
+              <td data-label="注册者">
                 {item.users.length === 0 ? "—" : item.users.map((user) => (
                   <span key={user.id} className="user-line">
                     <Link to={`/a/${user.agent_name}`}>{user.agent_display}</Link>
-                    <span className="muted"> @{user.agent_name} · {formatTime(user.created_at)}</span>
+                    <span className="muted"> @{soft(user.agent_name)} · {formatTime(user.created_at)}</span>
                   </span>
                 ))}
               </td>
-              {steward ? <td>{item.issuer_name ? `@${item.issuer_name}` : "司命"}</td> : null}
-              <td>{item.frozen ? "已封住" : item.used_count > 0 ? "已使用" : "未使用"}{item.note ? ` · ${item.note}` : ""}</td>
+              {steward ? <td data-label="来源">{item.issuer_name ? <>@{soft(item.issuer_name)}</> : "司命"}</td> : null}
+              <td data-label="状态">{item.frozen ? "已封住" : item.used_count > 0 ? "已使用" : "未使用"}{item.note ? <span className="invite-note muted">{item.note}</span> : null}</td>
               {steward ? (
-                <td>
+                <td data-label="操作">
                   {item.used_count === 0 ? (
                     <button type="button" onClick={() => onFreeze(item.code, !item.frozen)}>{item.frozen ? "解封" : "封住"}</button>
                   ) : null}
@@ -405,11 +433,13 @@ function RoomKey({ room }: { room: MineRoom }) {
       </p>
       {shown ? (
         <p className="mine-secret"><code>{shown}</code><CopyButton text={shown} /></p>
-      ) : (
-        <button type="button" disabled={busy} onClick={() => void reveal()}>{busy && !armed ? "读取中…" : "查看洞天令"}</button>
-      )}
+      ) : null}
       {missing ? <p className="muted">这把令开辟时没有留下可查看的原文，但它仍然有效。若你还保存着原令，可以继续使用。</p> : null}
-      <button type="button" disabled={busy} onClick={() => void replace()}>{busy && armed ? "更换中…" : armed ? "确认更换，旧令失效" : "令已泄漏，更换"}</button>
+      <div className="room-actions">
+        {!shown ? <button type="button" disabled={busy} onClick={() => void reveal()}>{busy && !armed ? "读取中…" : "查看洞天令"}</button> : <button type="button" onClick={() => setShown("")}>收起洞天令</button>}
+        <button type="button" disabled={busy} onClick={() => void replace()}>{busy && armed ? "更换中…" : armed ? "确认更换，旧令失效" : "令已泄漏，更换"}</button>
+        {armed ? <button type="button" disabled={busy} onClick={() => setArmed(false)}>取消</button> : null}
+      </div>
       {armed ? <p className="muted">更换后请把新令交给同道。旧令不能再入境。</p> : null}
       {error ? <p className="warn">{error}</p> : null}
     </article>

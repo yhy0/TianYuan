@@ -1,6 +1,6 @@
 import { Link, useSearchParams } from "react-router-dom";
 import { useFetch, usePagedPosts, type ChannelInfo, type PostCard } from "../api";
-import { formatTime, postStatus } from "../format";
+import { formatTime, postStatus, useHorizontalSelection } from "../format";
 import { RankMark } from "../seal";
 
 const BOARDS = {
@@ -33,6 +33,8 @@ export function Plaza({ board }: { board: keyof typeof BOARDS }) {
   const page = usePagedPosts(`${board}:${channel}:${tag}`, data);
   const known = topics.data?.tags ?? [];
   const topicList = tag && !known.some((item) => item.tag === tag) ? [{ tag, count: 0 }, ...known] : known;
+  const channelBar = useHorizontalSelection(channel);
+  const topicBar = useHorizontalSelection(`${tag}:${topicList.length}`);
 
   function keep(next: { channel?: string; tag?: string }) {
     const query: Record<string, string> = {};
@@ -51,22 +53,22 @@ export function Plaza({ board }: { board: keyof typeof BOARDS }) {
         {board === "quality" ? <p className="rss-link"><a href="/feed.xml">RSS 订阅</a></p> : null}
       </div>
       {board === "latest" ? (
-        <div className="chips">
+        <div className="chips channels-filter" ref={channelBar} role="group" aria-label="栏目筛选">
           {CHANNELS.filter(([slug]) => slug !== "shidao").map(([slug, name]) => (
-            <button key={slug || "all"} className={channel === slug ? "chip on" : "chip"} onClick={() => keep({ channel: slug })} type="button">
+            <button key={slug || "all"} className={channel === slug ? "chip on" : "chip"} aria-pressed={channel === slug} onClick={() => keep({ channel: slug })} type="button">
               {name}
             </button>
           ))}
-          <button className={channel === "shidao" ? "chip trial on" : "chip trial"} onClick={() => keep({ channel: "shidao" })} type="button">
+          <button className={channel === "shidao" ? "chip trial on" : "chip trial"} aria-pressed={channel === "shidao"} onClick={() => keep({ channel: "shidao" })} type="button">
             试道<span>· 免费参与</span>
           </button>
         </div>
       ) : null}
       {topicList.length > 0 ? (
-        <div className="chips topics">
-          <button className={tag ? "chip" : "chip on"} onClick={() => keep({ tag: "" })} type="button">全部话题</button>
+        <div className="chips topics" ref={topicBar} role="group" aria-label="话题筛选">
+          <button className={tag ? "chip" : "chip on"} aria-pressed={!tag} onClick={() => keep({ tag: "" })} type="button">全部话题</button>
           {topicList.map((item) => (
-            <button key={item.tag} className={tag === item.tag ? "chip on" : "chip"} onClick={() => keep({ tag: tag === item.tag ? "" : item.tag })} type="button">
+            <button key={item.tag} className={tag === item.tag ? "chip on" : "chip"} aria-pressed={tag === item.tag} onClick={() => keep({ tag: tag === item.tag ? "" : item.tag })} type="button">
               #{item.tag}
             </button>
           ))}
@@ -94,7 +96,7 @@ export function Plaza({ board }: { board: keyof typeof BOARDS }) {
             </p>
             <p className="foot">
               <span>{postStatus(post)}</span>
-              <span>评注 {post.reply_count}</span>
+              <Link to={`/p/${post.id}#replies-heading`}>评注 {post.reply_count}</Link>
               <span>赞同 {post.signal_up}</span>
               <span>驳道 {post.signal_down}</span>
               {post.bounty_locked > 0 ? <span>悬榜 {post.bounty_locked}</span> : null}

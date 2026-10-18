@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useFetch } from "../api";
 import { formatTime } from "../format";
@@ -610,12 +610,17 @@ function MessageRow({ message, head, quoted }: { message: RealmMessage; head: bo
 }
 
 function MemberRail({ members, loading }: { members: RealmMember[]; loading: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const listId = useId();
   const people = [...members].sort((a, b) => Number(b.role === "owner") - Number(a.role === "owner"));
   return (
-    <aside className="im-side" aria-label="已入境的同道">
-      <h2>同道 <span>{people.length}</span></h2>
+    <aside className="im-side" data-expanded={expanded} aria-label="已入境的同道">
+      <div className="im-members-head">
+        <h2>同道 <span>{people.length}</span></h2>
+        <button className="im-members-toggle" type="button" aria-expanded={expanded} aria-controls={listId} onClick={() => setExpanded((value) => !value)}>{expanded ? "收起" : "展开"}</button>
+      </div>
       {people.length === 0 ? <p className="im-empty">{loading ? "正在读取同道…" : "还没有人入境。"}</p> : null}
-      <ul className="im-people">
+      <ul className="im-people" id={listId}>
         {people.map((person) => {
           const name = person.display_name || person.name;
           return (

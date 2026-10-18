@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { useFetch, type AttestItem, type PostCard, type ReplyItem, type TipItem } from "../api";
 import { articleOutline, channelLabel, CopyButton, formatTime, postStatus, Prose, type ArticleHeading } from "../format";
 import { TagLine } from "./Plaza";
@@ -7,8 +7,13 @@ import { DaoSeal, RankMark } from "../seal";
 
 export function PostPage() {
   const { id } = useParams();
+  const { hash } = useLocation();
   const { data, error, loading } = useFetch<{ post: PostCard; replies: ReplyItem[]; attests: AttestItem[]; tips?: TipItem[] }>(id ? `/api/posts/${id}` : null);
   const headings = useMemo(() => articleOutline(data?.post.body || ""), [data?.post.body]);
+  useEffect(() => {
+    if (loading || !data || !hash) return;
+    document.getElementById(hash.slice(1))?.scrollIntoView({ block: "start" });
+  }, [id, hash, loading, data]);
   if (loading) return <p className="muted">读取中</p>;
   if (error || !data) return <p className="warn">{error || "没有这篇论道。"}</p>;
   const { post, replies, attests } = data;
@@ -27,8 +32,13 @@ export function PostPage() {
         <CopyButton text={`${post.title}\n\n${post.body || ""}`} />
       </p>
       <Reactions up={post.signal_up} down={post.signal_down} tips={tips.filter((item) => item.target_type === "post" && item.target_id === post.id)} />
+      <nav className="article-jumps" aria-label="文章章节">
+        <a href="#article-body">正文</a>
+        <a href="#attests-heading">验证 {attests.length}</a>
+        <a href="#replies-heading">评注 {replies.length}</a>
+      </nav>
       </header>
-      <Prose text={post.body || ""} anchored />
+      <div id="article-body"><Prose text={post.body || ""} anchored /></div>
       {post.citations && post.citations.length > 0 ? (
         <ul className="cites">
           {post.citations.map((item) => (
@@ -61,7 +71,7 @@ export function PostPage() {
       <ReplyTree nodes={threadReplies(replies)} tips={tips} />
       </section>
     </article>
-    <Toc headings={headings} />
+    <Toc headings={headings.length >= 2 ? [...headings, { id: "attests-heading", level: 2, text: "验证" }, { id: "replies-heading", level: 2, text: "评注" }] : []} />
     </div>
   );
 }
@@ -173,16 +183,12 @@ function Reactions({ up, down, tips }: { up: number; down: number; tips: TipItem
   );
 }
 
-function keepsShape(body: string): boolean {
-  return body.includes("```") || /(^|\n)\s*\|/.test(body) || /(^|\n)[^|\n]*\|[^|\n]*\|/.test(body);
-}
-
 function ReplyCard({ reply, tips }: { reply: ReplyItem; tips: TipItem[] }) {
-  const shaped = keepsShape(reply.body);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const bodyId = useId();
   const [open, setOpen] = useState(false);
-  const [short, setShort] = useState(shaped);
-  const preview = !shaped && !open;
+  const [short, setShort] = useState(true);
+  const preview = !open;
   const clamped = preview && !short;
 
   useLayoutEffect(() => {
@@ -190,17 +196,42 @@ function ReplyCard({ reply, tips }: { reply: ReplyItem; tips: TipItem[] }) {
     if (!el) return;
     const measure = () => {
       if (open) return;
-      if (el.querySelector("table, pre")) {
-        setShort(true);
-        return;
-      }
       setShort(el.scrollHeight <= el.clientHeight + 1);
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
+    if (el.firstElementChild) observer.observe(el.firstElementChild);
     return () => observer.disconnect();
   }, [open, reply.body]);
+
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!el || !clamped) return;
+    const hidden = new Set<HTMLElement>();
+    const restore = () => {
+      hidden.forEach((node) => { node.inert = false; });
+      hidden.clear();
+    };
+    const update = () => {
+      restore();
+      const inner = el.firstElementChild;
+      if (!inner) return;
+      const bottom = el.getBoundingClientRect().bottom - 32;
+      const candidates = new Set<Element>([...inner.children, ...inner.querySelectorAll("a, button, [tabindex]")]);
+      for (const node of candidates) {
+        if (node instanceof HTMLElement && !node.inert && node.getBoundingClientRect().top >= bottom) {
+          node.inert = true;
+          hidden.add(node);
+        }
+      }
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    if (el.firstElementChild) observer.observe(el.firstElementChild);
+    return () => { observer.disconnect(); restore(); };
+  }, [clamped, reply.body]);
 
   return (
     <section className="reply">
@@ -211,7 +242,7 @@ function ReplyCard({ reply, tips }: { reply: ReplyItem; tips: TipItem[] }) {
         <span>{formatTime(reply.created_at)}</span>
         <CopyButton text={reply.body} />
       </p>
-      <div ref={bodyRef} className={`reply-body${preview ? " preview" : ""}${clamped ? " clamped" : ""}`}>
+      <div ref={bodyRef} id={bodyId} className={`reply-body${preview ? " preview" : ""}${clamped ? " clamped" : ""}`}>
         <Prose text={reply.body} />
       </div>
       <Reactions up={reply.signal_up} down={reply.signal_down} tips={tips} />
@@ -224,9 +255,12 @@ function ReplyCard({ reply, tips }: { reply: ReplyItem; tips: TipItem[] }) {
           ))}
         </ul>
       ) : null}
-      {shaped || short ? null : (
-        <button className="fold" type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
-          {open ? "收起" : "展开"}
+      {short ? null : (
+        <button className="fold" type="button" aria-expanded={open} aria-controls={bodyId} onClick={() => {
+          if (open) bodyRef.current?.closest(".reply")?.scrollIntoView({ block: "start" });
+          setOpen((value) => !value);
+        }}>
+          {open ? "收起评注" : "展开全文"}
         </button>
       )}
     </section>

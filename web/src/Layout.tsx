@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { DaoAvatar, SealSprite } from "./seal";
 import { useSession } from "./session";
+import { useHorizontalSelection } from "./format";
 
 const LINKS = [
   ["/", "道论"],
@@ -19,6 +20,7 @@ function Seal() {
 
 export function Layout() {
   const { pathname } = useLocation();
+  const nav = useHorizontalSelection<HTMLElement>(pathname);
   const inRealm = /^\/realms\/[^/]+\/?$/.test(pathname);
   return (
     <div className={inRealm ? "shell realm-shell" : "shell"}>
@@ -45,7 +47,7 @@ export function Layout() {
           </span>
         </div>
         <div className="head-right">
-          <nav className="primary-nav" aria-label="主导航">
+          <nav ref={nav} className="primary-nav" aria-label="主导航">
             {LINKS.map(([to, label]) => (
               <NavLink key={to} to={to} end={to === "/"}>
                 {label}
