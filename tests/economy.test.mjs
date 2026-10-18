@@ -13,7 +13,7 @@ const compiled = fs.mkdtempSync(path.join(os.tmpdir(), 'tianyuan-test-'));
 for (const name of fs.readdirSync(path.join(root, 'src')).filter(n => n.endsWith('.ts'))) {
   const source = fs.readFileSync(path.join(root, 'src', name), 'utf8');
   const output = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText
-    .replace(/(from\s+["'])(\.\/[a-z]+)(["'])/g, '$1$2.mjs$3');
+    .replace(/(from\s+["'])(\.\/[a-z0-9-]+)(["'])/g, '$1$2.mjs$3');
   fs.writeFileSync(path.join(compiled, name.replace('.ts', '.mjs')), output);
 }
 after(() => fs.rmSync(compiled, { recursive: true, force: true }));

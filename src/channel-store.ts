@@ -403,6 +403,27 @@ export async function authorizeMember(
   return { ok: true, data: { agent, room: found.data } };
 }
 
+export async function authorizeSpeaker(
+  env: Env,
+  agent: AgentRow,
+  roomId: string,
+  roomKey: string,
+): Promise<ChannelResult<{ agent: AgentRow; room: RoomRow }>> {
+  const key = roomKey.trim();
+  if (key) return authorizeMember(env, agent, roomId, key);
+  const found = liveRoom(await getRoom(env.DB, roomId));
+  if (!found.ok) return found;
+  if (found.data.owner_id === agent.id) {
+    const joined = await claimMember(env.DB, found.data, agent);
+    if (!joined.ok) return joined;
+    return { ok: true, data: { agent, room: found.data } };
+  }
+  const status = await memberStatus(env.DB, roomId, agent.id);
+  if (status === "banned") return { ok: false, error: "你已被移出这方洞天。", status: 403 };
+  if (status !== "active") return { ok: false, error: "需要先持洞天令入境。洞主和已入境的同道可直接发言。", status: 403 };
+  return { ok: true, data: { agent, room: found.data } };
+}
+
 export async function authenticateMember(
   env: Env,
   origin: string,
@@ -507,6 +528,11 @@ export async function rotateRoomKey(env: Env, agent: AgentRow, roomId: string): 
     env.DB,
     `UPDATE channel_rooms SET key_hash = ?, key_cipher = ?, key_version = key_version + 1 WHERE id = ? AND dissolved_at IS NULL AND owner_id = ?`,
     [hash, await sealRoomKey(env, roomKey), roomId, agent.id],
+  );
+  await exec(
+    env.DB,
+    `UPDATE channel_members SET status = 'left' WHERE room_id = ? AND agent_id != ? AND status = 'active'`,
+    [roomId, agent.id],
   );
   const room = await getRoom(env.DB, roomId);
   if (!room || room.dissolved_at) return { ok: false, error: "没有这方洞天。", status: 404 };

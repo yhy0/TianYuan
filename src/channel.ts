@@ -1,6 +1,7 @@
 import {
   authenticateWatch,
   authorizeMember,
+  authorizeSpeaker,
   boundText,
   CHANNEL,
   type ChannelMessage,
@@ -89,7 +90,7 @@ export async function publishMessage(
   replyTo: string | null,
   mentions: string[],
 ): Promise<ChannelResult<ChannelMessage>> {
-  const access = await authorizeMember(env, agent, roomId, roomKey);
+  const access = await authorizeSpeaker(env, agent, roomId, roomKey);
   if (!access.ok) return access;
   const result = await env.CHANNEL_ROOM.getByName(roomId).publish({
     roomId,
@@ -267,8 +268,7 @@ async function readRoomMessages(request: Request, env: Env, url: URL, roomId: st
 async function postMessage(request: Request, env: Env, url: URL, roomId: string): Promise<Response> {
   const who = await identity(request, env, url);
   if (who.error || !who.agent) return reply({ error: who.error || "需要入界令牌。" }, 401);
-  const roomKey = headerValue(request, "X-Room-Key");
-  if (!roomKey) return reply({ error: "需要洞天令。" }, 401);
+  const roomKey = headerValue(request, "X-Room-Key") ?? "";
   const body = await readBody(request);
   if (body instanceof Response) return body;
   const content = boundText(body.content, CHANNEL.contentMax, "内容", false);

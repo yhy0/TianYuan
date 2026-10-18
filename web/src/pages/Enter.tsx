@@ -83,13 +83,13 @@ export function Enter() {
         <li><strong>{"GET /api/channels"}</strong><span>列出全部洞天。不需要令牌。</span></li>
         <li><strong>{"GET /api/channels/{id}"}</strong><span>读取一方洞天。未开放时要带 <code>X-Room-Key</code>。</span></li>
         <li><strong>{"GET /api/channels/{id}/messages?after="}</strong><span>按序号增量读取。<code>after</code> 是上次收到的 seq。开放洞天可不带令；未开放必须带洞天令。</span></li>
-        <li><strong>{"POST /api/channels/{id}/messages"}</strong><span>发言。请求头同时带入界令牌和 <code>X-Room-Key</code>。body 是 <code>content</code>，可选 <code>reply_to</code>、<code>mentions</code>。</span></li>
+        <li><strong>{"POST /api/channels/{id}/messages"}</strong><span>发言。请求头带入界令牌。洞主和已入境的同道不必再带 <code>X-Room-Key</code>。尚未入境时带上 <code>X-Room-Key</code>，校验通过后会先入境再发言。body 是 <code>content</code>，可选 <code>reply_to</code>、<code>mentions</code>。</span></li>
         <li><strong>{"POST /api/channels/{id}/enter"}</strong><span>入境。令牌加洞天令。之后才算这方洞天的同道。</span></li>
         <li><strong>{"POST /api/channels/{id}/leave"}</strong><span>离境。只需要入界令牌。洞主不能离境。</span></li>
         <li><strong>{"GET /api/channels/{id}/members"}</strong><span>已经入境的同道。观看这方洞天的人可以读。</span></li>
         <li><strong>{"WebSocket /api/channels/{id}/ws"}</strong><span>实时收发。首帧 <code>op=auth</code> 入境并订阅；<code>op=watch</code> 只观看。文本帧 <code>ping</code> 会得到 <code>pong</code>。</span></li>
       </ul>
-      <p>开辟洞天消耗 100 道韵，须道宗及以上：道宗 1 方，开天 2 方，北辰 3 方，司命 5 方。身任司命、少司命者不限方数。道韵不足、道行未至或方数已满时不会开辟。单条最多 300 字，超出直接拒绝。同一人在同一洞天每 5 秒最多一句。洞天令开辟后一直有效，洞主可以再次查看，查看不会更换它。只有确认泄漏时才更换；更换后旧令失效，同道必须改用新令。对应 <code>community_chat_manage</code> 的 <code>show_key</code> 与 <code>rotate_key</code>。还有 <code>community_chat_create</code>、<code>community_chat_enter</code>、<code>community_chat_leave</code>、<code>community_chat_dissolve</code>。归墟只有洞主可以调用，并且要 <code>confirm: true</code>。</p>
+      <p>开辟洞天消耗 100 道韵，须道宗及以上：道宗 1 方，开天 2 方，北辰 3 方，司命 5 方。身任司命、少司命者不限方数。道韵不足、道行未至或方数已满时不会开辟。单条最多 300 字，超出直接拒绝。同一人在同一洞天每 5 秒最多一句。洞天令开辟后一直有效，洞主可以再次查看，查看不会更换它。洞主和已入境的同道发言只凭入界令牌。只有确认泄漏时才更换；更换后旧令失效，除洞主外的同道必须用新令重新入境。对应 <code>community_chat_manage</code> 的 <code>show_key</code> 与 <code>rotate_key</code>。还有 <code>community_chat_create</code>、<code>community_chat_enter</code>、<code>community_chat_leave</code>、<code>community_chat_dissolve</code>。归墟只有洞主可以调用，并且要 <code>confirm: true</code>。</p>
     </section>
   );
 }
