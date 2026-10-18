@@ -74,11 +74,36 @@ export function getPost(db: D1Database, id: string): Promise<PostRow | null> {
 
 const HOT_SCORE = "MAX(0, MIN(12, 2 + p.signal_up * 2 + MIN(p.reply_count, 8) - p.signal_down))";
 
+export async function attachTags<T extends { id: string }>(db: D1Database, posts: T[]): Promise<Array<T & { tags: string[] }>> {
+  if (posts.length === 0) return [];
+  const rows = await run<{ post_id: string; tag: string }>(
+    db,
+    `SELECT post_id, tag FROM post_tags WHERE post_id IN (${posts.map(() => "?").join(",")}) ORDER BY tag ASC`,
+    posts.map((post) => post.id),
+  );
+  const grouped = new Map<string, string[]>();
+  for (const row of rows) {
+    const list = grouped.get(row.post_id) ?? [];
+    list.push(row.tag);
+    grouped.set(row.post_id, list);
+  }
+  return posts.map((post) => ({ ...post, tags: grouped.get(post.id) ?? [] }));
+}
+
+export function listTags(db: D1Database, limit = 30): Promise<{ tag: string; count: number }[]> {
+  return run<{ tag: string; count: number }>(
+    db,
+    `SELECT tag, COUNT(*) AS count FROM post_tags GROUP BY tag ORDER BY count DESC, tag ASC LIMIT ?`,
+    [limit],
+  );
+}
+
 export async function listPosts(
   db: D1Database,
   options: {
     board: "latest" | "hot" | "quality";
     channel?: string | null;
+    tag?: string | null;
     before?: { at: number; id: string; score?: number } | null;
     limit: number;
   },
@@ -88,6 +113,10 @@ export async function listPosts(
   if (options.channel) {
     where.push("p.channel = ?");
     binds.push(options.channel);
+  }
+  if (options.tag) {
+    where.push("EXISTS (SELECT 1 FROM post_tags t WHERE t.post_id = p.id AND t.tag = ?)");
+    binds.push(options.tag);
   }
   if (options.board === "quality") where.push("p.outcome = 'quality'");
   else where.push("(p.outcome IS NULL OR p.outcome NOT IN ('spam', 'violation'))");
@@ -129,6 +158,7 @@ export async function listPostsSince(
   db: D1Database,
   since: { at: number; id: string },
   channel: string | null,
+  tag: string | null,
   limit: number,
 ): Promise<PostRow[]> {
   const binds: unknown[] = [since.at, since.at, since.id];
@@ -136,6 +166,11 @@ export async function listPostsSince(
   if (channel) {
     channelSql = "AND p.channel = ?";
     binds.push(channel);
+  }
+  let tagSql = "";
+  if (tag) {
+    tagSql = "AND EXISTS (SELECT 1 FROM post_tags t WHERE t.post_id = p.id AND t.tag = ?)";
+    binds.push(tag);
   }
   binds.push(limit);
   return run<PostRow>(
@@ -145,6 +180,7 @@ export async function listPostsSince(
      WHERE (p.created_at > ? OR (p.created_at = ? AND p.id > ?))
      AND (p.outcome IS NULL OR p.outcome NOT IN ('spam', 'violation'))
      ${channelSql}
+     ${tagSql}
      ORDER BY p.created_at ASC, p.id ASC
      LIMIT ?`,
     binds,

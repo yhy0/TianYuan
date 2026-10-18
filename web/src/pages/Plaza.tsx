@@ -21,13 +21,27 @@ const CHANNELS = [
 export function Plaza({ board }: { board: keyof typeof BOARDS }) {
   const [params, setParams] = useSearchParams();
   const channel = params.get("channel") ?? "";
+  const tag = params.get("tag") ?? "";
   const query = new URLSearchParams({ board });
   if (channel) query.set("channel", channel);
+  if (tag) query.set("tag", tag);
   const firstUrl = `/api/feed?${query.toString()}`;
   const { data, error, loading } = useFetch<{ posts: PostCard[]; next_cursor: string | null }>(firstUrl);
   const catalog = useFetch<{ channels: ChannelInfo[] }>(board === "latest" ? "/api/rules" : null);
+  const topics = useFetch<{ tags: { tag: string; count: number }[] }>("/api/tags");
   const blurb = catalog.data?.channels.find((item) => item.slug === channel)?.description;
-  const page = usePagedPosts(`${board}:${channel}`, data);
+  const page = usePagedPosts(`${board}:${channel}:${tag}`, data);
+  const known = topics.data?.tags ?? [];
+  const topicList = tag && !known.some((item) => item.tag === tag) ? [{ tag, count: 0 }, ...known] : known;
+
+  function keep(next: { channel?: string; tag?: string }) {
+    const query: Record<string, string> = {};
+    const channelValue = next.channel === undefined ? channel : next.channel;
+    const tagValue = next.tag === undefined ? tag : next.tag;
+    if (channelValue) query.channel = channelValue;
+    if (tagValue) query.tag = tagValue;
+    setParams(query);
+  }
 
   return (
     <section className="feed-page">
@@ -39,13 +53,23 @@ export function Plaza({ board }: { board: keyof typeof BOARDS }) {
       {board === "latest" ? (
         <div className="chips">
           {CHANNELS.filter(([slug]) => slug !== "shidao").map(([slug, name]) => (
-            <button key={slug || "all"} className={channel === slug ? "chip on" : "chip"} onClick={() => setParams(slug ? { channel: slug } : {})} type="button">
+            <button key={slug || "all"} className={channel === slug ? "chip on" : "chip"} onClick={() => keep({ channel: slug })} type="button">
               {name}
             </button>
           ))}
-          <button className={channel === "shidao" ? "chip trial on" : "chip trial"} onClick={() => setParams({ channel: "shidao" })} type="button">
+          <button className={channel === "shidao" ? "chip trial on" : "chip trial"} onClick={() => keep({ channel: "shidao" })} type="button">
             试道<span>· 免费参与</span>
           </button>
+        </div>
+      ) : null}
+      {topicList.length > 0 ? (
+        <div className="chips topics">
+          <button className={tag ? "chip" : "chip on"} onClick={() => keep({ tag: "" })} type="button">全部话题</button>
+          {topicList.map((item) => (
+            <button key={item.tag} className={tag === item.tag ? "chip on" : "chip"} onClick={() => keep({ tag: tag === item.tag ? "" : item.tag })} type="button">
+              #{item.tag}
+            </button>
+          ))}
         </div>
       ) : null}
       {blurb ? <p className="muted channel-note">{blurb}</p> : null}
@@ -63,6 +87,7 @@ export function Plaza({ board }: { board: keyof typeof BOARDS }) {
             <h2>
               <Link to={`/p/${post.id}`}>{post.title}</Link>
             </h2>
+            {post.tags && post.tags.length > 0 ? <TagLine tags={post.tags} board={board} channel={channel} /> : null}
             <p className="by">
               <Link to={`/a/${post.author.name}`} className={post.author.online ? "live" : undefined}>{post.author.display_name}</Link>
               <RankMark rank={post.author.rank} size={20} />
@@ -89,4 +114,18 @@ export function Plaza({ board }: { board: keyof typeof BOARDS }) {
 
 function channelName(slug: string): string {
   return CHANNELS.find(([id]) => id === slug)?.[1] ?? slug;
+}
+
+export function TagLine({ tags, board = "latest", channel = "" }: { tags: string[]; board?: keyof typeof BOARDS; channel?: string }) {
+  return (
+    <p className="tags">
+      {tags.map((item) => {
+        const query = new URLSearchParams();
+        if (channel) query.set("channel", channel);
+        query.set("tag", item);
+        const path = board === "latest" ? "/" : `/${board}`;
+        return <Link key={item} to={`${path}?${query.toString()}`}>#{item}</Link>;
+      })}
+    </p>
+  );
 }

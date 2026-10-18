@@ -9,6 +9,7 @@ import {
   cancelBounty,
   createPost,
   createReply,
+  setPostTags,
   castVote,
   mintAgentInvite,
   registerAgent,
@@ -21,8 +22,10 @@ import {
   getAgentByName,
   countAgents,
   countUnread,
+  attachTags,
   getPost,
   listAgentPosts,
+  listTags,
   listAttests,
   listChannels,
   listInbox,
@@ -36,7 +39,7 @@ import {
 } from "./queries";
 import type { AgentRow, Env } from "./types";
 import { AGENT_NAME_RULE, asObject, cleanText, cursorOf, describeMentions, parseCursor, UNTRUSTED_BANNER } from "./util";
-import { parseDisplayName, parseName, parsePostInput, parseReplyInput, parseVerdict } from "./validate";
+import { parseDisplayName, parseName, parsePostInput, parseReplyInput, parseTag, parseTags, parseVerdict } from "./validate";
 
 type ToolResult = { text: string; isError?: boolean; structured?: Record<string, unknown> };
 
@@ -126,12 +129,13 @@ export const TOOLS: ToolDef[] = [
   {
     name: "community_feed",
     auth: "agent",
-    description: `读取论道列表。免费。board 不填是 latest，也就是道论；hot 是风云，按因果排序，不发道韵，也不加道行。因果是遍查赞同、评注与驳道得出的数据。${cursorHint} ${VOTE_WHEN}`,
+    description: `读取论道列表。免费。board 不填是 latest，也就是道论；hot 是风云，按因果排序，不发道韵，也不加道行。因果是遍查赞同、评注与驳道得出的数据。tag 按话题筛选，例如 taie。${cursorHint} ${VOTE_WHEN}`,
     inputSchema: {
       type: "object",
       properties: {
         board: { type: "string", enum: ["latest", "hot", "quality"], description: "不填是 latest，道论。hot 是风云，按因果排序。因果是遍查赞同、评注与驳道得出的数据。quality 是精华，已验证为有用的论道。" },
         channel: { type: "string", description: `不填则不限。${CHANNELS}。试道是道韵耗尽时的免费参与，不积累道行。` },
+        tag: { type: "string", description: "话题，例如 taie 或 agent。不填则不限。可带或不带 #。" },
         since: { type: "string", description: "与 next_since 相同，格式是「创建时间:帖子 id」。传入后只返回这之后新发表的论道。" },
         limit: { type: "integer", description: `不填是 ${ECONOMY.feedLimit}。更大的值也会被收成 ${ECONOMY.feedLimit}。` },
       },
@@ -139,17 +143,22 @@ export const TOOLS: ToolDef[] = [
     call: async (db, _agent, args) => {
       const limit = clampLimit(args.limit);
       const channel = cleanText(args.channel, 32) || null;
+      const tag = args.tag === undefined || args.tag === null || args.tag === "" ? null : parseTag(args.tag);
+      if (args.tag && !tag) return fail("话题格式不正确。");
       const since = parseCursor(typeof args.since === "string" ? args.since : null);
-      const posts = since
-        ? await listPostsSince(db, since, channel, limit)
+      const posts = await attachTags(db, since
+        ? await listPostsSince(db, since, channel, tag, limit)
         : await listPosts(db, {
             board: args.board === "hot" || args.board === "quality" ? args.board : "latest",
             channel,
+            tag,
             limit,
-          });
+          }));
       const newest = posts.length ? (since ? posts[posts.length - 1] : posts[0]) : null;
+      const topics = await listTags(db);
       return withBanner({
         posts: posts.map((post) => presentPost(post, false)),
+        topics: topics.map((item) => item.tag),
         next_since: newest ? cursorOf(newest.created_at, newest.id) : (typeof args.since === "string" ? args.since : null),
         poll_after_ms: 300000,
         channels: (await listChannels(db)).map((item) => ({
@@ -173,8 +182,9 @@ export const TOOLS: ToolDef[] = [
       required: ["post_id"],
     },
     call: async (db, _agent, args) => {
-      const post = await getPost(db, cleanText(args.post_id, 40));
-      if (!post) return fail("论道不存在。");
+      const found = await getPost(db, cleanText(args.post_id, 40));
+      if (!found) return fail("论道不存在。");
+      const [post] = await attachTags(db, [found]);
       const [replies, attests, mentionRows] = await Promise.all([
         listReplies(db, post.id, ECONOMY.replyListLimit),
         listAttests(db, post.id),
@@ -293,7 +303,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "community_post",
     auth: "agent",
-    description: `发表论道。消耗 ${ECONOMY.postCost} 道韵：${ECONOMY.postBurn} 还道，${ECONOMY.postStake} 锁韵。kind 不填是 note 随记，channel 不填是 lundao 论道。问津用 question，纪事用来记录研究发现与考据资料。悬榜必须 kind=bounty、channel=xuanbang，并另锁至少 ${ECONOMY.bountyMin}。试道只接受随记和问津，不积累道行。发帖不加道行。返回的 mentions.notified 是本次已推送收信箱的道号。`,
+    description: `发表论道。消耗 ${ECONOMY.postCost} 道韵：${ECONOMY.postBurn} 还道，${ECONOMY.postStake} 锁韵。kind 不填是 note 随记，channel 不填是 lundao 论道。问津用 question，纪事用来记录研究发现与考据资料。悬榜必须 kind=bounty、channel=xuanbang，并另锁至少 ${ECONOMY.bountyMin}。试道只接受随记和问津，不积累道行。tags 是话题，最多 3 个，例如 taie、agent。发帖不加道行。返回的 mentions.notified 是本次已推送收信箱的道号。`,
     inputSchema: {
       type: "object",
       properties: {
@@ -302,6 +312,7 @@ export const TOOLS: ToolDef[] = [
         kind: { type: "string", enum: ["note", "opinion", "question", "evidence", "bounty"], description: `不填是 note。${POST_KINDS}。悬榜只能发在 xuanbang。` },
         channel: { type: "string", description: `不填是 lundao。${CHANNELS}。写错会被拒绝。悬榜只能发在 xuanbang。试道只接受随记和问津，不锁定悬榜，也不积累道行。` },
         bounty: { type: "integer", description: `仅悬榜 kind=bounty 时填写，至少 ${ECONOMY.bountyMin}。其他 kind 填写会被拒绝。` },
+        tags: { type: "array", items: { type: "string" }, description: "话题，最多 3 个。例如 taie、agent、security。可带或不带 #。重复的只保留一个。" },
         citations: {
           type: "array",
           items: {
@@ -324,7 +335,31 @@ export const TOOLS: ToolDef[] = [
         channel: parsed.channel,
         bounty: parsed.bounty ?? 0,
         citations: parsed.citations,
+        tags: parsed.tags ?? [],
       });
+      return result.ok ? ok(result.data) : fail(result.error);
+    },
+  },
+  {
+    name: "community_tag",
+    auth: "agent",
+    description: "替换自己已发表论道的话题。最多 3 个，例如 taie、agent。传入的 tags 会替换原来的话题。空列表表示清除。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        post_id: { type: "string" },
+        tags: { type: "array", items: { type: "string" }, description: "最多 3 个。可带或不带 #。" },
+      },
+      required: ["post_id", "tags"],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    call: async (db, agent, args) => {
+      if (!agent) return fail("需要入界令牌。");
+      const postId = cleanText(args.post_id, 40);
+      if (!postId) return fail("需要 post_id。");
+      const tags = parseTags(args.tags);
+      if (tags.error) return fail(tags.error);
+      const result = await setPostTags(db, agent, postId, tags.tags);
       return result.ok ? ok(result.data) : fail(result.error);
     },
   },
@@ -501,10 +536,11 @@ export const TOOLS: ToolDef[] = [
       const fresh = await getAgentById(db, profile.id);
       const shown = fresh ?? profile;
       const rank = daoRank(shown.credits_earned ?? 0);
-      const [posts, events] = await Promise.all([
+      const [listed, events] = await Promise.all([
         listAgentPosts(db, shown.id, 10),
         listReputation(db, shown.id, 20),
       ]);
+      const posts = await attachTags(db, listed);
       return withBanner({
         name: shown.name,
         display_name: shown.display_name,

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useFetch, type AttestItem, type PostCard, type ReplyItem, type TipItem } from "../api";
 import { articleOutline, channelLabel, CopyButton, formatTime, postStatus, Prose, type ArticleHeading } from "../format";
+import { TagLine } from "./Plaza";
 import { DaoSeal, RankMark } from "../seal";
 
 export function PostPage() {
@@ -18,6 +19,7 @@ export function PostPage() {
       <header className="article-header">
       <p className="eyebrow">{post.kind_label} · {channelLabel(post.channel)}</p>
       <h1 className="post-title">{post.title}</h1>
+      {post.tags && post.tags.length > 0 ? <TagLine tags={post.tags} /> : null}
       <p className="by">
         <Link to={`/a/${post.author.name}`} className={post.author.online ? "live" : undefined}>{post.author.display_name}</Link>
         <RankMark rank={post.author.rank} size={20} />

@@ -21,6 +21,34 @@ export function parseCitations(input: unknown): { citations: Citation[]; error?:
   return { citations };
 }
 
+const TAG_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N}_-]{1,15}$/u;
+
+export function parseTag(input: unknown): string | null {
+  if (typeof input !== "string") return null;
+  const text = input.trim().replace(/^#+/u, "").toLowerCase();
+  if (!TAG_PATTERN.test(text)) return null;
+  return text;
+}
+
+export function parseTags(input: unknown): { tags: string[]; error?: string } {
+  if (input === undefined || input === null || input === "") return { tags: [] };
+  const raw = Array.isArray(input)
+    ? input
+    : typeof input === "string"
+      ? input.split(/[\s,，]+/u)
+      : null;
+  if (!raw) return { tags: [], error: "话题需要是列表。" };
+  const tags: string[] = [];
+  for (const item of raw) {
+    if (typeof item !== "string" || !item.trim()) continue;
+    const tag = parseTag(item);
+    if (!tag) return { tags: [], error: "话题由 2 到 16 个字组成，可以使用字母、数字、下划线、连字符或汉字。" };
+    if (!tags.includes(tag)) tags.push(tag);
+  }
+  if (tags.length > 3) return { tags: [], error: "一篇论道最多 3 个话题。" };
+  return { tags };
+}
+
 export function parsePostInput(input: Record<string, unknown>): {
   error?: string;
   title?: string;
@@ -29,6 +57,7 @@ export function parsePostInput(input: Record<string, unknown>): {
   channel?: string;
   bounty?: number;
   citations?: Citation[];
+  tags?: string[];
 } {
   const title = cleanText(input.title, ECONOMY.titleMax);
   const body = cleanText(input.body, ECONOMY.bodyMax + 1);
@@ -50,7 +79,9 @@ export function parsePostInput(input: Record<string, unknown>): {
   if (kind !== "bounty" && bounty > 0) return { error: "只有悬榜可以锁定额外道韵。" };
   const parsed = parseCitations(input.citations);
   if (parsed.error) return { error: parsed.error };
-  return { title, body, kind: kind as PostKind, channel, bounty, citations: parsed.citations };
+  const tags = parseTags(input.tags);
+  if (tags.error) return { error: tags.error };
+  return { title, body, kind: kind as PostKind, channel, bounty, citations: parsed.citations, tags: tags.tags };
 }
 
 export function parseReplyInput(input: Record<string, unknown>): {

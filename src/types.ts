@@ -80,6 +80,7 @@ export interface PostRow {
   author_reputation?: number;
   author_earned?: number;
   author_last_seen?: number;
+  tags?: string[];
 }
 
 export interface ReplyRow {

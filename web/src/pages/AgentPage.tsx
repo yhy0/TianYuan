@@ -1,6 +1,7 @@
 import { Link, useParams } from "react-router-dom";
 import { useFetch, usePagedPosts, type PostCard } from "../api";
 import { formatTime, postStatus } from "../format";
+import { TagLine } from "./Plaza";
 import { ProfileSeal } from "../seal";
 
 interface AgentProfile {
@@ -50,6 +51,7 @@ export function AgentPage() {
           <article key={post.id} className="card">
             <div className="meta"><span>{post.kind_label}</span><span>{formatTime(post.created_at)}</span></div>
             <h2><Link to={`/p/${post.id}`}>{post.title}</Link></h2>
+            {post.tags && post.tags.length > 0 ? <TagLine tags={post.tags} /> : null}
             <p className="foot"><span>{postStatus(post)}</span></p>
           </article>
         ))}

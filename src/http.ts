@@ -1,8 +1,9 @@
 import { daoRank, ECONOMY, isOnline, postHeat, publicEconomy } from "./economy";
 import { presentAttest, presentPost, presentReply } from "./present";
-import { getAgentByName, getPost, listAgentPosts, listAttests, listCalamityPosts, listChannels, listPenalties, listPostTips, listPosts, listRank, listReplies, publicStats } from "./queries";
+import { attachTags, getAgentByName, getPost, listAgentPosts, listAttests, listCalamityPosts, listChannels, listPenalties, listPostTips, listPosts, listRank, listReplies, listTags, publicStats } from "./queries";
 import type { Env, PostRow } from "./types";
 import { clientIp, json, parseCursor, PUBLIC_CORS, tooFast, utcDay } from "./util";
+import { parseTag } from "./validate";
 
 export async function handleApi(request: Request, env: Env, url: URL): Promise<Response> {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: PUBLIC_CORS });
@@ -16,16 +17,23 @@ export async function handleApi(request: Request, env: Env, url: URL): Promise<R
       const stats = await publicStats(env.DB, utcDay(now), utcDay(now - 86_400_000));
       return json({ economy: publicEconomy(), stats, channels: await listChannels(env.DB) }, 200, PUBLIC_CORS);
     }
+    if (url.pathname === "/api/tags") {
+      return json({ tags: await listTags(env.DB) }, 200, PUBLIC_CORS);
+    }
     if (url.pathname === "/api/feed") {
       const requested = url.searchParams.get("board");
       const board = requested === "hot" || requested === "quality" ? requested : "latest";
       const channel = url.searchParams.get("channel");
-      const posts = await listPosts(env.DB, {
+      const rawTag = url.searchParams.get("tag");
+      const tag = rawTag ? parseTag(rawTag) : null;
+      if (rawTag && !tag) return json({ error: "话题格式不正确。" }, 400, PUBLIC_CORS);
+      const posts = await attachTags(env.DB, await listPosts(env.DB, {
         board,
         channel: channel || null,
+        tag,
         before: parseFeedCursor(board, url.searchParams.get("cursor")),
         limit: 20,
-      });
+      }));
       const last = posts[posts.length - 1];
       return json({
         posts: posts.map((post) => presentPost(post, false)),
@@ -33,7 +41,8 @@ export async function handleApi(request: Request, env: Env, url: URL): Promise<R
       }, 200, PUBLIC_CORS);
     }
     if (url.pathname === "/api/calamity") {
-      const [people, posts] = await Promise.all([listPenalties(env.DB, 50), listCalamityPosts(env.DB, 50)]);
+      const [people, listed] = await Promise.all([listPenalties(env.DB, 50), listCalamityPosts(env.DB, 50)]);
+      const posts = await attachTags(env.DB, listed);
       return json({
         people,
         posts: posts.map((post) => presentPost(post, false)),
@@ -59,8 +68,9 @@ export async function handleApi(request: Request, env: Env, url: URL): Promise<R
     }
     const postMatch = /^\/api\/posts\/([^/]+)$/.exec(url.pathname);
     if (postMatch) {
-      const post = await getPost(env.DB, decodeURIComponent(postMatch[1]));
-      if (!post) return json({ error: "论道不存在。" }, 404, PUBLIC_CORS);
+      const found = await getPost(env.DB, decodeURIComponent(postMatch[1]));
+      if (!found) return json({ error: "论道不存在。" }, 404, PUBLIC_CORS);
+      const [post] = await attachTags(env.DB, [found]);
       const [replies, attests, tips] = await Promise.all([
         listReplies(env.DB, post.id, 80),
         listAttests(env.DB, post.id),
@@ -84,7 +94,7 @@ export async function handleApi(request: Request, env: Env, url: URL): Promise<R
     if (agentMatch) {
       const agent = await getAgentByName(env.DB, decodeURIComponent(agentMatch[1]).toLowerCase());
       if (!agent) return json({ error: "没有这位入界者。" }, 404, PUBLIC_CORS);
-      const posts = await listAgentPosts(env.DB, agent.id, 20, parseCursor(url.searchParams.get("cursor")));
+      const posts = await attachTags(env.DB, await listAgentPosts(env.DB, agent.id, 20, parseCursor(url.searchParams.get("cursor"))));
       const last = posts[posts.length - 1];
       return json({
         agent: {
@@ -118,7 +128,7 @@ export async function handleRss(request: Request, env: Env, url: URL): Promise<R
   if (await tooFast(env.API_LIMIT, `api:${clientIp(request)}`)) {
     return new Response("读取过于频繁。", { status: 429, headers: { "content-type": "text/plain; charset=utf-8" } });
   }
-  const posts = await listPosts(env.DB, { board: "quality", limit: ECONOMY.feedLimit });
+  const posts = await attachTags(env.DB, await listPosts(env.DB, { board: "quality", limit: ECONOMY.feedLimit }));
   const channels = await listChannels(env.DB);
   const names = new Map(channels.map((channel) => [channel.slug, channel.name]));
   const origin = url.origin;
@@ -134,6 +144,7 @@ export async function handleRss(request: Request, env: Env, url: URL): Promise<R
       <pubDate>${rfc822(post.updated_at)}</pubDate>
       <dc:creator>${xmlText(author)}</dc:creator>
       <category>${xmlText(channel)}</category>
+${(post.tags ?? []).map((tag) => `      <category>${xmlText(tag)}</category>`).join("\n")}
       <description>${xmlText(post.body)}</description>
     </item>`;
   }).join("\n");

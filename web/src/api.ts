@@ -39,6 +39,7 @@ export interface PostCard {
   channel: string;
   kind: string;
   kind_label: string;
+  tags?: string[];
   author: Author;
   created_at: number;
   status: string;

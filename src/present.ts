@@ -37,6 +37,7 @@ export function presentPost(post: PostRow, withBody: boolean): Record<string, un
     stake: post.stake,
     bounty_locked: post.bounty_locked,
     bounty_state: post.bounty_state,
+    tags: post.tags ?? [],
     reply_count: post.reply_count,
     signal_up: post.signal_up,
     signal_down: post.signal_down,

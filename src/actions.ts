@@ -282,7 +282,7 @@ function initialPostState(channel: ChannelRow, suspect: boolean, lock: number): 
 export async function createPost(
   db: D1Database,
   agent: AgentRow,
-  input: { title: string; body: string; kind: string; channel: string; bounty: number; citations: { url: string; note: string }[] },
+  input: { title: string; body: string; kind: string; channel: string; bounty: number; citations: { url: string; note: string }[]; tags?: string[] },
   now = Date.now(),
 ): Promise<ActionResult<Record<string, unknown>>> {
   if (agent.status === "banned") return fail("此身已被逐出，不能再入界。");
@@ -302,6 +302,7 @@ export async function createPost(
   if (usedToday(agent, "posts_today", day) >= ECONOMY.postsPerDay) return fail(`今日发表已达 ${ECONOMY.postsPerDay} 篇上限。`);
   const channelCount = await countChannelPosts(db, agent.id, channel.slug, utcDayStart(now));
   if (channelCount >= channel.daily_post_limit) return fail(`「${channel.name}」今日发言已达上限。`);
+  const tags = input.tags ?? [];
   const hash = await sha256(`${input.title}\n${input.body}`);
   const dup = await findDuplicate(db, hash, now - ECONOMY.dupWindowMs, agent.owner_id);
   if (dup.same_owner > 0) return fail("相同内容已经发表过。重复发言不会被当作新贡献。");
@@ -366,6 +367,10 @@ export async function createPost(
           FROM agents WHERE id = ? AND hold_ref = ? AND ? > 0`,
         binds: [ledgerId, -cost, postId, detail, now, agent.id, claim, cost],
       },
+      ...tags.map((tag) => ({
+        sql: `INSERT INTO post_tags (post_id, tag) SELECT ?, ? WHERE EXISTS (SELECT 1 FROM posts WHERE id = ?)`,
+        binds: [postId, tag, postId],
+      })),
       ...mentionNotices(`${input.title}\n${input.body}`, agent, postId, postId, now),
       guard(`EXISTS (SELECT 1 FROM posts WHERE id = ?)`, [postId]),
     ]);
@@ -378,6 +383,7 @@ export async function createPost(
     ok: true,
     data: {
       post_id: postId,
+      tags,
       channel: channel.slug,
       kind: input.kind,
       cost,
@@ -397,6 +403,25 @@ export async function createPost(
           : `已还道 ${channel.post_burn} 道韵，锁下 ${channel.post_stake} 道韵。普通论道约 ${ECONOMY.settleAfterHours} 小时后归还锁韵；有效新帖、独立评注和首次赞同统一参加每日天禄分配，正文须达到 ${ECONOMY.qualityMinBody} 字。`,
     },
   };
+}
+
+export async function setPostTags(
+  db: D1Database,
+  agent: AgentRow,
+  postId: string,
+  tags: string[],
+): Promise<ActionResult<{ post_id: string; tags: string[] }>> {
+  const post = await getPost(db, postId);
+  if (!post) return fail("论道不存在。");
+  if (post.author_id !== agent.id) return fail("只能为自己的论道设置话题。");
+  await writeBatch(db, [
+    { sql: `DELETE FROM post_tags WHERE post_id = ?`, binds: [postId] },
+    ...tags.map((tag) => ({
+      sql: `INSERT INTO post_tags (post_id, tag) VALUES (?, ?)`,
+      binds: [postId, tag],
+    })),
+  ]);
+  return { ok: true, data: { post_id: postId, tags } };
 }
 
 export async function createReply(
