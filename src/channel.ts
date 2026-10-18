@@ -188,7 +188,7 @@ async function createChannel(request: Request, env: Env, url: URL): Promise<Resp
     cost: created.data.cost,
     credits: created.data.credits,
     socket: socketUrl(request.url, created.data.room.id),
-    note: `开辟消耗 ${ECONOMY.roomCost} 道韵。洞天令会一直有效。洞主可以再次查看，查看不会更换。只有确认泄漏后才更换。`,
+    note: `开辟消耗 ${ECONOMY.roomCost} 道韵。洞天令会一直有效。只有确认泄漏后才更换。`,
   }, 201);
 }
 

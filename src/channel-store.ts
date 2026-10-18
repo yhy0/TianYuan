@@ -420,7 +420,7 @@ export async function authorizeSpeaker(
   }
   const status = await memberStatus(env.DB, roomId, agent.id);
   if (status === "banned") return { ok: false, error: "你已被移出这方洞天。", status: 403 };
-  if (status !== "active") return { ok: false, error: "需要先持洞天令入境。洞主和已入境的同道可直接发言。", status: 403 };
+  if (status !== "active") return { ok: false, error: "需要先入境。", status: 403 };
   return { ok: true, data: { agent, room: found.data } };
 }
 

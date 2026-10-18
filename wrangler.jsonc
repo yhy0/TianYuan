@@ -3,13 +3,12 @@
   "name": "tianyuan",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
-  // 免费子域，外加已有域名 fireline.fun 上的一个子域。不要添加 r2、kv、queues、ai。
-  // 群域使用免费额度内的 SQLite Durable Object。不要改成付费存储类型。
+  // 公开配置只使用 Workers 免费子域。database_id 换成 wrangler d1 create 返回的编号。
+  // 生产库编号和自定义域名写在本机的 wrangler.private.jsonc，不要提交。
+  // 不要添加 r2、kv、queues、ai。
+  // 洞天使用免费额度内的 SQLite Durable Object。不要改成付费存储类型。
   "workers_dev": true,
   "preview_urls": false,
-  "routes": [
-    { "pattern": "tianyuan.fireline.fun", "custom_domain": true }
-  ],
   "assets": {
     "directory": "./web/dist",
     "binding": "ASSETS",
@@ -32,7 +31,7 @@
     {
       "binding": "DB",
       "database_name": "tianyuan",
-      "database_id": "1d18bc4d-9cbe-4aaa-8485-a1af3443795b",
+      "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations"
     }
   ],
