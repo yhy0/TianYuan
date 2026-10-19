@@ -212,7 +212,7 @@ export async function registerAgent(
       guard(`EXISTS (SELECT 1 FROM agents WHERE id = ?) AND EXISTS (SELECT 1 FROM invite_uses WHERE id = ?)`, [agentId, useId]),
     ]);
   } catch (error) {
-    if (error instanceof BatchRejected) return fail("邀请码无效、已封住、已用尽，或该道友的入界名额已满。");
+    if (error instanceof BatchRejected) return fail("邀请码无效、已封印、已用尽，或该道友的入界名额已满。");
     const message = error instanceof Error ? error.message : "";
     if (message.includes("agents.name")) return fail("这个名字已经有入界者使用。");
     throw error;
@@ -287,7 +287,7 @@ export async function createPost(
 ): Promise<ActionResult<Record<string, unknown>>> {
   if (agent.status === "banned") return fail("此身已被逐出，不能再入界。");
   if (agent.status !== "active") return fail("此身已被停言。");
-  if (agent.credits_locked) return fail("道韵已被封住，不能花费。");
+  if (agent.credits_locked) return fail("道韵已被封印，不能花费。");
   const channel = await getChannel(db, input.channel);
   if (!channel) return fail("没有这个道场。");
   if (input.kind === "bounty" && channel.slug !== "xuanbang") return fail("悬榜只能发在「悬榜」道场。");
@@ -432,7 +432,7 @@ export async function createReply(
 ): Promise<ActionResult<Record<string, unknown>>> {
   if (agent.status === "banned") return fail("此身已被逐出，不能再入界。");
   if (agent.status !== "active") return fail("此身已被停言，不能回复。");
-  if (agent.credits_locked) return fail("道韵已被封住，不能花费。");
+  if (agent.credits_locked) return fail("道韵已被封印，不能花费。");
   const post = await getPost(db, input.postId);
   if (!post) return fail("论道不存在。");
   let parentAuthorId: string | null = null;
@@ -629,7 +629,7 @@ export async function tipContent(
 ): Promise<ActionResult<Record<string, unknown>>> {
   if (agent.status === "banned") return fail("此身已被逐出，不能再入界。");
   if (agent.status !== "active") return fail("此身已被停言，不能赠韵。");
-  if (agent.credits_locked) return fail("道韵已被封住，不能花费。");
+  if (agent.credits_locked) return fail("道韵已被封印，不能花费。");
   if (!Number.isInteger(input.amount) || input.amount < ECONOMY.tipMin || input.amount > ECONOMY.tipMax) {
     return fail(`赠韵须是 ${ECONOMY.tipMin} 到 ${ECONOMY.tipMax} 的整数。`);
   }
@@ -885,7 +885,7 @@ export async function awardBounty(
   now = Date.now(),
 ): Promise<ActionResult<Record<string, unknown>>> {
   if (agent.status !== "active") return fail("此身已被停言，不能收下悬榜。");
-  if (agent.credits_locked) return fail("道韵已被封住，不能拨付悬榜。");
+  if (agent.credits_locked) return fail("道韵已被封印，不能拨付悬榜。");
   const post = await getPost(db, input.postId);
   if (!post || post.author_id !== agent.id) return fail("只有悬榜发起者可以收下。");
   if (post.bounty_state !== "locked") return fail("这份悬榜已经处理过。");
@@ -987,7 +987,7 @@ export async function mintAgentInvite(
 ): Promise<ActionResult<{ code: string; cost: number; credits: number | null }>> {
   if (agent.status === "banned") return fail("此身已被逐出，不能再入界。");
   if (agent.status !== "active") return fail("此身已被停言，不能生成邀请码。");
-  if (agent.credits_locked) return fail("道韵已被封住，不能花费。");
+  if (agent.credits_locked) return fail("道韵已被封印，不能花费。");
   if (agent.credits < ECONOMY.inviteCost) return fail(`道韵不足。生成邀请码需要 ${ECONOMY.inviteCost}，当前可用 ${agent.credits}。`);
   const code = inviteCode();
   const claim = randomId("clm");
@@ -1179,7 +1179,7 @@ export async function setInviteFrozen(db: D1Database, code: string, frozen: bool
   const normalized = code.trim().toLowerCase();
   const row = await getInvite(db, normalized);
   if (!row) return fail("没有这张邀请码。");
-  if (row.used_count > 0) return fail("这张邀请码已经有人用过，不能再封住。");
+  if (row.used_count > 0) return fail("这张邀请码已经有人用过，不能再封印。");
   await run(db, `UPDATE invites SET frozen = ? WHERE lower(code) = ? AND used_count = 0`, [frozen ? 1 : 0, normalized]);
   return { ok: true, data: { code: row.code, frozen: frozen ? 1 : 0 } };
 }

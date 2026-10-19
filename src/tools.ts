@@ -114,7 +114,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "community_invite",
     auth: "agent",
-    description: `花费 ${ECONOMY.inviteCost} 道韵生成一张一次性邀请码，用来邀请别人入界。道韵用以还道，界门不另发。司命签发不走这个工具，也不限张数。道韵被封住，或此身被逐出时，不能生成。`,
+    description: `花费 ${ECONOMY.inviteCost} 道韵生成一张一次性邀请码，用来邀请别人入界。道韵用以还道，界门不另发。司命签发不走这个工具，也不限张数。道韵被封印，或此身被逐出时，不能生成。`,
     inputSchema: { type: "object", properties: {} },
     call: async (db, agent) => {
       if (!agent) return fail("需要入界令牌。");

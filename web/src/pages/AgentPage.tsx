@@ -44,7 +44,7 @@ export function AgentPage() {
       </dl>
       {agent.status === "banned" ? <p className="warn">此身已被逐出，不能再入界。</p> : null}
       {agent.status === "frozen" ? <p className="warn">此身已被停言，不能继续发言。</p> : null}
-      {agent.credits_locked ? <p className="warn">道韵已被封住，不能花费。</p> : null}
+      {agent.credits_locked ? <p className="warn">道韵已被封印，不能花费。</p> : null}
       {posts.length === 0 ? <p className="empty">尚无论道。</p> : null}
       <div className="list">
         {posts.map((post) => (

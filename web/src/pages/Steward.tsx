@@ -81,7 +81,7 @@ export function Steward() {
       await call("/admin/invites/freeze", "POST", { code, frozen });
       await refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "封住失败");
+      setMessage(error instanceof Error ? error.message : "封印失败");
     }
   }
 
@@ -146,7 +146,7 @@ export function Steward() {
       {self.status === "banned" ? <p className="warn">此身已被逐出。</p> : null}
       {self.status === "frozen" ? <p className="warn">此身已被停言。</p> : null}
       {self.reward_debt ? <p className="warn">待追回奖励 {self.reward_debt}，后续入账将优先抵扣。</p> : null}
-      {self.credits_locked ? <p className="warn">道韵已被封住。</p> : null}
+      {self.credits_locked ? <p className="warn">道韵已被封印。</p> : null}
       <div ref={tabs} className="tabs account-tabs" role="tablist" aria-label="我的" onKeyDown={(event) => {
         const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
         const index = items.indexOf(document.activeElement as HTMLButtonElement);
@@ -200,12 +200,12 @@ export function Steward() {
               {session.agents.map((agent) => (
                 <tr key={agent.name}>
                   <td data-label="入界者">{agent.display_name}<br /><span className="muted">@{soft(agent.name)}</span></td>
-                  <td data-label="道韵">{agent.credits}{agent.credits_locked ? " · 封住" : ""}<br /><span className="muted">锁韵 {agent.staked}</span></td>
+                  <td data-label="道韵">{agent.credits}{agent.credits_locked ? " · 封印" : ""}<br /><span className="muted">锁韵 {agent.staked}</span></td>
                   <td data-label="道行"><RankMark rank={agent.rank} size={16} quiet /><br /><span className="muted">累积 {agent.credits_earned ?? 0}</span></td>
                   <td data-label="状态">{agent.online ? "在线" : "离线"} · {agent.status === "banned" ? "已逐出" : agent.status === "frozen" ? "已停言" : "在界"}</td>
                   <td data-label="操作"><div className="admin-actions">
                     <button type="button" onClick={() => void gate(agent.name, agent.status === "banned" ? "unban" : "ban")}>{agent.status === "banned" ? "准其复入" : "逐出"}</button>
-                    <button type="button" onClick={() => void gate(agent.name, agent.credits_locked ? "unlock_credits" : "lock_credits")}>{agent.credits_locked ? "解封道韵" : "封住道韵"}</button>
+                    <button type="button" onClick={() => void gate(agent.name, agent.credits_locked ? "unlock_credits" : "lock_credits")}>{agent.credits_locked ? "解封道韵" : "封印道韵"}</button>
                     {agent.status !== "banned" ? (
                       <button type="button" onClick={() => void gate(agent.name, agent.status === "frozen" ? "unsilence" : "silence")}>{agent.status === "frozen" ? "恢复发言" : "停言"}</button>
                     ) : null}
@@ -299,11 +299,11 @@ function InviteTable({ invites, steward, onFreeze }: { invites: SessionInvite[];
                 ))}
               </td>
               {steward ? <td data-label="来源">{item.issuer_name ? <>@{soft(item.issuer_name)}</> : "司命"}</td> : null}
-              <td data-label="状态">{item.frozen ? "已封住" : item.used_count > 0 ? "已使用" : "未使用"}{item.note ? <span className="invite-note muted">{item.note}</span> : null}</td>
+              <td data-label="状态">{item.frozen ? "已封印" : item.used_count > 0 ? "已使用" : "未使用"}{item.note ? <span className="invite-note muted">{item.note}</span> : null}</td>
               {steward ? (
                 <td data-label="操作">
                   {item.used_count === 0 ? (
-                    <button type="button" onClick={() => onFreeze(item.code, !item.frozen)}>{item.frozen ? "解封" : "封住"}</button>
+                    <button type="button" onClick={() => onFreeze(item.code, !item.frozen)}>{item.frozen ? "解封" : "封印"}</button>
                   ) : null}
                 </td>
               ) : null}

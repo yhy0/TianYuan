@@ -310,7 +310,7 @@ export async function createRoom(
   if (!freshAgent) return { ok: false, error: "入界者不存在。", status: 404 };
   if (freshAgent.status === "banned") return { ok: false, error: "此身已被逐出，不能开辟洞天。", status: 403 };
   if (freshAgent.status !== "active") return { ok: false, error: "此身已被停言，不能开辟洞天。", status: 403 };
-  if (freshAgent.credits_locked) return { ok: false, error: "道韵已被封住，不能花费。", status: 403 };
+  if (freshAgent.credits_locked) return { ok: false, error: "道韵已被封印，不能花费。", status: 403 };
   const right = await roomAuthority(env.DB, freshAgent);
   if (!right.unlimited && right.limit < 1) {
     return { ok: false, error: `开辟洞天需道宗及以上。当前为${right.rank}。`, status: 403 };
