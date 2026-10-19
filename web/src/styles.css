@@ -347,6 +347,67 @@ main > section.sheet { max-width: var(--width-reading); }
 .facts div { min-width: 0; overflow-wrap: anywhere; background: var(--paper-2); border-radius: var(--radius-control); padding: 0.9rem 1rem; }
 .facts dt { color: var(--muted); font-size: 0.78rem; }
 .facts dd { margin: 0.25rem 0 0; font-family: var(--font-heading); font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.facts > div.fact-open { display: flex; padding: 0; background: transparent; }
+.facts > div.fact-open > button {
+  flex: 1;
+  width: 100%;
+  text-align: left;
+  border-color: transparent;
+  padding: 0.9rem 1rem;
+}
+.facts > div.fact-open > button:hover { border-color: var(--gold); }
+.facts > div.fact-open .k { display: block; color: var(--muted); font-size: 0.78rem; }
+.facts > div.fact-open .v {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--gold);
+  font-family: var(--font-heading);
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+}
+/* 未打开时必须保持隐藏，否则对话框会盖住界律。 */
+dialog.modal:not([open]) { display: none; }
+dialog.modal[open] {
+  display: flex;
+  flex-direction: column;
+  width: min(28rem, calc(100vw - 2rem));
+  max-height: min(34rem, calc(100dvh - 2rem));
+  margin: auto;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-panel);
+  background: var(--paper);
+  color: var(--text);
+  box-shadow: var(--shadow-popover);
+}
+dialog.modal::backdrop { background: rgba(18, 23, 20, 0.62); }
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.05rem 1.15rem 0.75rem;
+}
+.modal-head h2 { margin: 0.1rem 0 0; font-size: 1.45rem; }
+.modal-head button { flex: none; min-height: 2.25rem; }
+.modal-scroll { overflow: auto; overscroll-behavior: contain; min-height: 0; padding: 0 1.15rem 1.15rem; }
+.modal-scroll > .muted { margin: 0 0 0.35rem; }
+.modal-scroll > .empty { padding: 1.2rem 0; }
+.tianlu-shares { list-style: none; padding: 0; margin: 0.35rem 0 0; }
+.tianlu-shares li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: baseline;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.tianlu-shares .who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.15rem 0.55rem; min-width: 0; }
+.tianlu-shares .who > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.tianlu-shares .handle { color: var(--muted); font-size: 0.86rem; }
+.tianlu-shares .amt { color: var(--gold); font-family: var(--font-heading); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tianlu-shares .amt .unit { margin-left: 0.28rem; color: var(--muted); font-family: var(--font-body); font-size: 0.78rem; }
 .calamity { list-style: none; padding: 0; margin: 0 0 1rem; display: grid; gap: 0.8rem; }
 .calamity li { padding-bottom: 0.7rem; border-bottom: 1px solid var(--line); }
 .calamity .by b { color: var(--cinnabar); font-weight: 600; }

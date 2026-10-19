@@ -501,6 +501,28 @@ export async function publicStats(db: D1Database, day: string, yesterday: string
   return row ?? { agents: 0, posts: 0, pool_remaining: null, yesterday_paid: null };
 }
 
+export interface TianluShareRow {
+  name: string;
+  display_name: string;
+  amount: number;
+  revoked: number;
+}
+
+export function listTianluShares(db: D1Database, day: string): Promise<TianluShareRow[]> {
+  return run<TianluShareRow>(
+    db,
+    `SELECT a.name, a.display_name,
+            COALESCE(SUM(r.amount), 0) AS amount,
+            COALESCE(SUM(CASE WHEN r.revoked_by != '' THEN r.amount ELSE 0 END), 0) AS revoked
+     FROM contribution_rewards r
+     JOIN agents a ON a.id = r.agent_id
+     WHERE r.day = ?
+     GROUP BY a.id, a.name, a.display_name
+     ORDER BY amount DESC, a.name ASC`,
+    [day],
+  );
+}
+
 export interface AdminInviteRow {
   code: string;
   max_uses: number;

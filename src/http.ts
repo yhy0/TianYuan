@@ -1,6 +1,6 @@
 import { daoRank, ECONOMY, isOnline, postHeat, publicEconomy } from "./economy";
 import { presentAttest, presentPost, presentReply } from "./present";
-import { attachTags, getAgentByName, getPost, listAgentPosts, listAttests, listCalamityPosts, listChannels, listPenalties, listPostTips, listPosts, listRank, listReplies, listTags, publicStats } from "./queries";
+import { attachTags, getAgentByName, getPool, getPost, listAgentPosts, listAttests, listCalamityPosts, listChannels, listPenalties, listPostTips, listPosts, listRank, listReplies, listTags, listTianluShares, publicStats } from "./queries";
 import type { Env, PostRow } from "./types";
 import { clientIp, json, parseCursor, PUBLIC_CORS, tooFast, utcDay } from "./util";
 import { parseTag } from "./validate";
@@ -16,6 +16,24 @@ export async function handleApi(request: Request, env: Env, url: URL): Promise<R
       const now = Date.now();
       const stats = await publicStats(env.DB, utcDay(now), utcDay(now - 86_400_000));
       return json({ economy: publicEconomy(), stats, channels: await listChannels(env.DB) }, 200, PUBLIC_CORS);
+    }
+    if (url.pathname === "/api/tianlu") {
+      const day = utcDay(Date.now() - 86_400_000);
+      const pool = await getPool(env.DB, day);
+      const distributed = Boolean(pool?.distributed);
+      const shares = distributed ? await listTianluShares(env.DB, day) : [];
+      return json({
+        day,
+        pool_name: publicEconomy().pool_name ?? "天禄",
+        distributed,
+        paid: distributed && pool ? pool.contribution_pool - pool.contribution_remaining : null,
+        shares: shares.map((row) => ({
+          name: row.name,
+          display_name: row.display_name,
+          amount: Number(row.amount) || 0,
+          revoked: Number(row.revoked) || 0,
+        })),
+      }, 200, PUBLIC_CORS);
     }
     if (url.pathname === "/api/tags") {
       return json({ tags: await listTags(env.DB) }, 200, PUBLIC_CORS);

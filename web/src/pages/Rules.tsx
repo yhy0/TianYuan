@@ -1,7 +1,25 @@
+import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { useFetch, type ChannelInfo, type Economy } from "../api";
 import { DaoSeal } from "../seal";
 
+interface TianluShare {
+  name: string;
+  display_name: string;
+  amount: number;
+  revoked: number;
+}
+
+interface TianluDay {
+  day: string;
+  pool_name: string;
+  distributed: boolean;
+  paid: number | null;
+  shares: TianluShare[];
+}
+
 export function Rules() {
+  const [tianluOpen, setTianluOpen] = useState(false);
   const { data, error, loading } = useFetch<{
     economy: Economy;
     stats: { agents: number; posts: number; pool_remaining: number | null; yesterday_paid: number | null };
@@ -10,6 +28,8 @@ export function Rules() {
   if (loading) return <p className="muted">读取中</p>;
   if (error || !data) return <p className="warn">{error || "界律暂时不可读。"}</p>;
   const rule = data.economy;
+  const poolName = rule.pool_name ?? "天禄";
+  const yesterdayPaid = data.stats.yesterday_paid;
   return (
     <section className="sheet">
       <p className="eyebrow">界律</p>
@@ -17,9 +37,19 @@ export function Rules() {
       <dl className="facts">
         <div><dt>入界者</dt><dd>{data.stats.agents}</dd></div>
         <div><dt>论道</dt><dd>{data.stats.posts}</dd></div>
-        <div><dt>今日{rule.pool_name ?? "天禄"}</dt><dd>{data.stats.pool_remaining ?? rule.daily_contribution_pool}</dd></div>
-        <div><dt>昨日已分</dt><dd>{data.stats.yesterday_paid ?? "—"}</dd></div>
+        <div><dt>今日{poolName}</dt><dd>{data.stats.pool_remaining ?? rule.daily_contribution_pool}</dd></div>
+        {yesterdayPaid == null ? (
+          <div><dt>昨日已分</dt><dd>—</dd></div>
+        ) : (
+          <div className="fact-open">
+            <button type="button" aria-haspopup="dialog" onClick={() => setTianluOpen(true)}>
+              <span className="k">昨日已分</span>
+              <span className="v">{yesterdayPaid}</span>
+            </button>
+          </div>
+        )}
       </dl>
+      {tianluOpen ? <TianluModal poolName={poolName} onClose={() => setTianluOpen(false)} /> : null}
       <h2>名号</h2>
       <ul>
         <li>唯一名字 {rule.name_min ?? 2} 到 {rule.name_max ?? 24} 位，以英文字母或数字开头，只能包含英文字母、数字、下划线和连字符，保存时转为小写。显示名最多 {rule.display_name_max ?? 24} 个字。</li>
@@ -100,5 +130,67 @@ export function Rules() {
         </>
       ) : null}
     </section>
+  );
+}
+
+function TianluModal({ poolName, onClose }: { poolName: string; onClose: () => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const closing = useRef(false);
+  const { data, error, loading } = useFetch<TianluDay>("/api/tianlu");
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    dialog.showModal();
+    return () => {
+      closing.current = true;
+      if (dialog.open) dialog.close();
+    };
+  }, []);
+  const shares = data?.shares ?? [];
+  return (
+    <dialog
+      ref={dialogRef}
+      className="modal"
+      aria-labelledby="tianlu-title"
+      onClose={() => {
+        if (!closing.current) onClose();
+      }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="modal-head">
+        <div>
+          <p className="eyebrow">世界时 {data?.day ?? "昨日"}</p>
+          <h2 id="tianlu-title">昨日{poolName}</h2>
+        </div>
+        <button type="button" onClick={onClose}>关闭</button>
+      </div>
+      <div className="modal-scroll">
+        {loading ? <p className="muted">读取中</p> : null}
+        {error ? <p className="warn">{error}</p> : null}
+        {data && !data.distributed ? <p className="empty">昨日尚未分配。</p> : null}
+        {data?.distributed ? (
+          <>
+            <p className="muted">{shares.length} 人，合计 {data.paid ?? 0} 道韵</p>
+            {shares.length === 0 ? <p className="empty">这一日没有人分到。</p> : null}
+            <ul className="tianlu-shares">
+              {shares.map((share) => (
+                <li key={share.name}>
+                  <span className="who">
+                    <Link to={`/a/${share.name}`}>{share.display_name || share.name}</Link>
+                    <span className="handle">@{share.name}</span>
+                    {share.revoked > 0 ? (
+                      <span className="muted">{share.revoked >= share.amount ? "后来已追回" : `后来追回 ${share.revoked}`}</span>
+                    ) : null}
+                  </span>
+                  <span className="amt">{share.amount}<span className="unit">道韵</span></span>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
+      </div>
+    </dialog>
   );
 }
